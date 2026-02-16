@@ -1,0 +1,8 @@
+duckdb==0.10.0
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+redis==5.0.1
+orjson==3.9.15
+python-Levenshtein==0.25.0
+tqdm==4.66.1
+requests==2.31.0

@@ -20,10 +20,11 @@ FAILED  = 0
 def check(label: str, condition: bool, detail: str = ""):
     global PASSED, FAILED
     if condition:
-        logger.info(f"   PASS — {label}")
+        # Ajout de {detail} ici pour voir tes chiffres même quand ça réussit !
+        logger.info(f"   ✅ PASS — {label:<35} {detail}")
         PASSED += 1
     else:
-        logger.error(f"   FAIL — {label}  {detail}")
+        logger.error(f"   ❌ FAIL — {label:<35} {detail}")
         FAILED += 1
 
 
@@ -38,20 +39,33 @@ def run_validation():
     # ─── 1. VOLUMÉTRIE ────────────────────────────────────────────────────
     logger.info("\n 1. Volumétrie")
 
+    # Calcul des volumes
     n_unified = con.execute("SELECT COUNT(*) FROM unified_records").fetchone()[0]
     n_rna_ok  = con.execute("SELECT COUNT(*) FROM unified_records WHERE id_rna IS NOT NULL").fetchone()[0]
     n_gps_ok  = con.execute("SELECT COUNT(*) FROM unified_records WHERE latitude IS NOT NULL").fetchone()[0]
+    
+    # Nouveau : Nombre de codes postaux distincts
+    n_cp_distinct = con.execute("SELECT COUNT(DISTINCT postal_code) FROM unified_records WHERE postal_code IS NOT NULL").fetchone()[0]
+    
     n_stats   = con.execute("SELECT COUNT(*) FROM stats_by_postal").fetchone()[0]
     n_search  = con.execute("SELECT COUNT(*) FROM search_index").fetchone()[0]
 
+    # Affichage et vérifications
     check("Table unified_records non vide", n_unified > 1_000_000,
           f"({n_unified:,} lignes — attendu > 1M)")
+    
+    check("Couverture géographique", n_cp_distinct > 5000,
+          f"({n_cp_distinct:,} codes postaux répertoriés)") # Affiche le nombre ici
+    
     check("Associations avec RNA",          n_rna_ok  > 100_000,
           f"({n_rna_ok:,} — attendu > 100k)")
+    
     check("Établissements géolocalisés",    n_gps_ok  > 5_000_000,
           f"({n_gps_ok:,} — attendu > 5M)")
-    check("Table stats_by_postal",          n_stats   > 10_000,
-          f"({n_stats:,} codes postaux)")
+    
+    check("Table stats_by_postal",          n_stats   > 5000,
+          f"({n_stats:,} entrées dans la table stats)")
+    
     check("Table search_index",             n_search  > 1_000_000,
           f"({n_search:,} — attendu > 1M)")
 

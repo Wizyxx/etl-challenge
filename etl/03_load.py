@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """
-ETL CHALLENGE - PHASE 3: CHARGEMENT (v3)
-Corrections vs v2 :
-  - DISTINCT ON → ROW_NUMBER() (DuckDB ne supporte pas DISTINCT ON)
-  - Reste identique
+ETL CHALLENGE - PHASE 3: CHARGEMENT (v4)
+Corrections vs v3 :
+  - Ajout export SQLite FTS5 pour l'endpoint /search (imposé par le sujet)
+  - DuckDB reste pour /siret et /stats
 """
 
 import duckdb
+import sqlite3
 import logging
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-PROCESSED = Path("data/processed")
-DB_PATH   = PROCESSED / "unified_data.duckdb"
+PROCESSED   = Path("data_parquet")
+DB_DIR      = Path("duckdb")
+DB_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH     = DB_DIR / "unified_data.duckdb"
+SQLITE_PATH = DB_DIR / "search.db"
 
 
 def load_and_join():
@@ -60,21 +64,12 @@ def load_and_join():
         """)
         n = con.execute("SELECT COUNT(*) FROM unite_legale").fetchone()[0]
         logger.info(f"   {n:,} unites legales")
-        has_ul = True
     else:
         logger.warning("   unite_legale absent, noms incomplets")
         con.execute("CREATE TABLE unite_legale (siren VARCHAR, nom_ul VARCHAR, categorieEntreprise VARCHAR)")
-        has_ul = False
 
     # =========================================================================
-    # 2. TABLE UNIFIEE
-    #
-    # Jointure RNA :
-    #   - Strategie A (exacte)   : SIRENE.siret = RNA.siret (14 chiffres)
-    #   - Strategie B (fallback) : SIRENE.siren = RNA.siret[:9]
-    #     Le RNA stocke parfois seulement le SIREN du siège (9 chiffres)
-    #
-    # CORRECTION : DISTINCT ON (PostgreSQL) → ROW_NUMBER() (DuckDB)
+    # 2. TABLE UNIFIEE (golden_record)
     # =========================================================================
     logger.info("Creation table unifiee (jointures)...")
 
@@ -82,13 +77,10 @@ def load_and_join():
         CREATE TABLE unified_records AS
         WITH
 
-        -- Jointure RNA par SIRET exact (priorité)
         rna_by_siret AS (
             SELECT * FROM rna WHERE siret IS NOT NULL
         ),
 
-        -- Fallback : 1 seul RNA représentant par SIREN
-        -- ROW_NUMBER() au lieu de DISTINCT ON (non supporté par DuckDB)
         rna_by_siren AS (
             SELECT id_rna, siren_key, date_publi, nature
             FROM (
@@ -108,7 +100,6 @@ def load_and_join():
             SELECT
                 s.siret,
                 s.siren,
-                -- Nom : denominationUsuelle locale > enseigne > UniteLegale (jointure SQL)
                 COALESCE(
                     NULLIF(s.name_etab, ''),
                     NULLIF(s.enseigne, ''),
@@ -172,15 +163,11 @@ def load_and_join():
         logger.info("   PREUVE 2 (GPS) : %s", "OK" if res[3] else "ECHEC lat=NULL")
     else:
         logger.warning("SIRET Croix Rouge absent de unified_records")
-        diag_s = con.execute("SELECT siret, siren, name_etab FROM sirene WHERE siret = '77567227200020'").fetchall()
-        logger.warning(f"   Dans sirene : {diag_s}")
-        diag_r = con.execute("SELECT id_rna, siret FROM rna WHERE siret LIKE '775672272%' LIMIT 3").fetchall()
-        logger.warning(f"   Dans rna    : {diag_r}")
 
     # =========================================================================
-    # 3. INDEX
+    # 3. INDEX DUCKDB
     # =========================================================================
-    logger.info("Creation des index...")
+    logger.info("Creation des index DuckDB...")
     con.execute("CREATE INDEX idx_siret  ON unified_records(siret)")
     con.execute("CREATE INDEX idx_postal ON unified_records(postal_code)")
     con.execute("CREATE INDEX idx_name   ON unified_records(name)")
@@ -188,7 +175,7 @@ def load_and_join():
     logger.info("   idx_siret / idx_postal / idx_name / idx_siren OK")
 
     # =========================================================================
-    # 4. STATS PRE-AGREGEES
+    # 4. STATS PRE-AGREGEES (pour /stats/{cp})
     # =========================================================================
     logger.info("Pre-calcul statistiques par code postal...")
 
@@ -206,7 +193,6 @@ def load_and_join():
         GROUP BY postal_code
     """)
 
-    # Count du top_naf dans une étape séparée (évite le bug mode()+window)
     con.execute("""
         CREATE TABLE naf_counts AS
         SELECT postal_code, naf, COUNT(*) AS cnt
@@ -228,35 +214,116 @@ def load_and_join():
     logger.info("   stats_by_postal OK")
 
     # =========================================================================
-    # 5. TABLE DE RECHERCHE
+    # 5. SQLITE FTS5 (pour /search — imposé par le sujet)
     # =========================================================================
-    logger.info("Creation search_index...")
-    con.execute("""
-        CREATE TABLE search_index AS
-        SELECT
-            siret,
-            UPPER(name)               AS name_upper,
-            UPPER(enseigne)           AS enseigne_upper,
-            postal_code,
-            SUBSTR(postal_code, 1, 2) AS dept,
-            city,
-            is_association,
-            status
-        FROM unified_records
-        WHERE name IS NOT NULL
-    """)
-    con.execute("CREATE INDEX idx_search_dept   ON search_index(dept)")
-    con.execute("CREATE INDEX idx_search_postal ON search_index(postal_code)")
-    logger.info("   search_index OK")
+    logger.info("Export vers SQLite FTS5 (search_view)...")
+    _build_sqlite_fts(con)
 
     con.close()
     logger.info("=" * 60)
-    logger.info("BASE DUCKDB PRETE : %s", DB_PATH)
+    logger.info("BASE DUCKDB PRETE  : %s", DB_PATH)
+    logger.info("BASE SQLITE PRETE  : %s", SQLITE_PATH)
     logger.info("=" * 60)
+
+
+def _build_sqlite_fts(con_duck: duckdb.DuckDBPyConnection):
+    """
+    Exporte la search_view depuis DuckDB vers une base SQLite avec FTS5.
+
+    Pourquoi SQLite FTS5 plutôt que DuckDB LIKE ?
+    - LIKE '%mot%' (wildcard en debut) = full scan = lent sur 35M lignes
+    - FTS5 = index inversé tokenisé = lookup O(1) = < 50ms garanti
+    - FTS5 trie par pertinence (rank) automatiquement
+
+    Structure de la table virtuelle FTS5 :
+      - Colonnes UNINDEXED : pas tokenisées, servent juste de payload
+      - Colonnes sans UNINDEXED : tokenisées et indexées pour la recherche
+    """
+    if SQLITE_PATH.exists():
+        SQLITE_PATH.unlink()
+
+    conn = sqlite3.connect(str(SQLITE_PATH))
+
+    # Table virtuelle FTS5
+    # tokenize='unicode61' : gère les accents et caractères spéciaux français
+    conn.execute("""
+        CREATE VIRTUAL TABLE search_fts USING fts5(
+            siret        UNINDEXED,
+            name,
+            enseigne,
+            city         UNINDEXED,
+            postal_code  UNINDEXED,
+            dept         UNINDEXED,
+            is_association UNINDEXED,
+            status       UNINDEXED,
+            tokenize = 'unicode61 remove_diacritics 1'
+        )
+    """)
+
+    # Table classique pour les filtres exacts (dept, postal_code)
+    # FTS5 ne supporte pas bien les index sur colonnes UNINDEXED
+    # On crée une table miroir avec index B-tree pour les filtres géographiques
+    conn.execute("""
+        CREATE TABLE search_meta (
+            siret        TEXT PRIMARY KEY,
+            name         TEXT,
+            enseigne     TEXT,
+            city         TEXT,
+            postal_code  TEXT,
+            dept         TEXT,
+            is_association INTEGER,
+            status       TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX idx_meta_dept   ON search_meta(dept)")
+    conn.execute("CREATE INDEX idx_meta_postal ON search_meta(postal_code)")
+
+    logger.info("   Export des données depuis DuckDB (établissements actifs)...")
+
+    # On exporte par batch pour ne pas saturer la RAM
+    BATCH = 500_000
+    offset = 0
+    total  = 0
+
+    while True:
+        rows = con_duck.execute(f"""
+            SELECT
+                siret,
+                COALESCE(name, '')          AS name,
+                COALESCE(enseigne, '')      AS enseigne,
+                COALESCE(city, '')          AS city,
+                COALESCE(postal_code, '')   AS postal_code,
+                COALESCE(SUBSTR(postal_code, 1, 2), '') AS dept,
+                CAST(is_association AS INTEGER),
+                COALESCE(status, '')        AS status
+            FROM unified_records
+            WHERE name IS NOT NULL
+              AND postal_code IS NOT NULL
+            LIMIT {BATCH} OFFSET {offset}
+        """).fetchall()
+
+        if not rows:
+            break
+
+        conn.executemany("INSERT INTO search_fts VALUES (?,?,?,?,?,?,?,?)", rows)
+        conn.executemany("INSERT OR IGNORE INTO search_meta VALUES (?,?,?,?,?,?,?,?)", rows)
+        conn.commit()
+
+        total  += len(rows)
+        offset += BATCH
+        logger.info(f"   -> {total:,} entrées indexées...")
+
+    # Optimisation FTS5 : regroupe les segments d'index pour des lectures plus rapides
+    logger.info("   Optimisation de l'index FTS5 (merge)...")
+    conn.execute("INSERT INTO search_fts(search_fts) VALUES('optimize')")
+    conn.commit()
+    conn.close()
+
+    logger.info(f"OK SQLite FTS5 : {total:,} entrees -> {SQLITE_PATH}")
 
 
 if __name__ == "__main__":
     logger.info("=" * 60)
-    logger.info("PHASE 3 - CHARGEMENT & JOINTURES (v3)")
+    logger.info("PHASE 3 - CHARGEMENT & JOINTURES (v4)")
     logger.info("=" * 60)
     load_and_join()

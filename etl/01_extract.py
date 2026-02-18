@@ -18,8 +18,8 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-RAW_DIR           = Path("data/raw")
-PROCESSED         = Path("data/processed")
+RAW_DIR           = Path("data_raw")
+PROCESSED         = Path("data_parquet")
 PROCESSED.mkdir(parents=True, exist_ok=True)
 
 CHUNK_SIZE_SIRENE = 50_000
@@ -111,9 +111,9 @@ def extract_unite_legale():
         logger.info("⏩ UniteLegale déjà extrait, skip.")
         return
     if not ul_path.exists():
-        logger.warning("⚠️  StockUniteLegale_utf8.zip absent de data/raw/")
+        logger.warning("⚠️  StockUniteLegale_utf8.zip absent de data_raw/")
         logger.warning("   Téléchargez-le :")
-        logger.warning("   wget 'https://files.data.gouv.fr/insee-sirene/StockUniteLegale_utf8.zip' -O data/raw/StockUniteLegale_utf8.zip")
+        logger.warning("   wget 'https://files.data.gouv.fr/insee-sirene/StockUniteLegale_utf8.zip' -O data_raw/StockUniteLegale_utf8.zip")
         return
 
     logger.info("🏛️  UniteLegale — extraction streaming...")

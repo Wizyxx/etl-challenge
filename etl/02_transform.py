@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ETL CHALLENGE - PHASE 2: TRANSFORMATION (v3)
-Lit UNIQUEMENT depuis data/processed/*_raw.parquet
+Lit UNIQUEMENT depuis data_parquet/*_raw.parquet
 Aucun accès aux ZIP — c'est le rôle de 01_extract.py
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-PROCESSED  = Path("data/processed")
+PROCESSED  = Path("data_parquet")
 BATCH_SIZE = 500_000
 
 TYPE_VOIE_MAP = {

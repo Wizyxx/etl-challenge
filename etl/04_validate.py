@@ -12,7 +12,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("data/processed/unified_data.duckdb")
+DB_PATH = Path("duckdb/unified_data.duckdb")
 PASSED  = 0
 FAILED  = 0
 

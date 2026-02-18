@@ -150,7 +150,7 @@ def get_siret(siret: str):
             "geo_score":      float(geo_score) if geo_score else None,
             "latitude":       float(lat)  if lat  else None,
             "longitude":      float(lon)  if lon  else None,
-            "is_ban_validated": bool(is_ban) if is_ban is not None else False,
+            "is_ban_validated": bool(is_ban) if is_ban else False,
         },
         # Champs bonus compatibles avec l'exemple simplifié du sujet
         "status":    status,

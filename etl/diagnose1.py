@@ -1,118 +1,50 @@
 #!/usr/bin/env python3
 """
-Diagnostic synthétique - résultats concis uniquement
+Analyse : pourquoi seulement 9748 codes postaux ?
+Hypothèse : la validation clean_postal_series() rejette des CP valides
 """
 import duckdb
-import pyarrow.parquet as pq
-import pandas as pd
-from pathlib import Path
+con = duckdb.connect('data/processed/unified_data.duckdb', read_only=True)
 
-PROCESSED = Path("data/processed")
-DB_PATH   = PROCESSED / "unified_data.duckdb"
-con = duckdb.connect(str(DB_PATH), read_only=True)
+print("=" * 60)
+print("ANALYSE : Distribution des codes postaux")
+print("=" * 60)
 
-# ─── 1. TAUX DE NULL colonnes clés ────────────────────────────────────────────
-print("=" * 60)
-print("1. TAUX NULL dans sirene_clean (sur 500k lignes échantillon)")
-print("=" * 60)
-pf = pq.ParquetFile(PROCESSED / "sirene_clean.parquet")
-df = next(pf.iter_batches(batch_size=500_000)).to_pandas()
-total = len(df)
-for col in ['name', 'enseigne', 'addr_street', 'postal_code', 'ban_key']:
-    pct = 100 * df[col].isna().sum() / total
-    print(f"  {col:20s} : {pct:5.1f}% NULL")
-
-# 1 exemple name=NULL vs name renseigné
-ex_null = df[df['name'].isna()][['siret','name','enseigne']].head(1).to_dict('records')
-ex_ok   = df[df['name'].notna()][['siret','name','enseigne']].head(1).to_dict('records')
-print(f"  ex name=NULL  : {ex_null}")
-print(f"  ex name=OK    : {ex_ok}")
-
-# ─── 2. CROIX ROUGE ────────────────────────────────────────────────────────────
-print()
-print("=" * 60)
-print("2. CROIX ROUGE (SIREN 775672272)")
-print("=" * 60)
-found = False
-pf2 = pq.ParquetFile(PROCESSED / "sirene_raw.parquet")
-for batch in pf2.iter_batches(batch_size=500_000,
-        columns=['siret','siren','denominationUsuelleEtablissement','enseigne1Etablissement']):
-    match = batch.to_pandas().query("siren == '775672272'")
-    if len(match):
-        print(f"  TROUVÉ dans sirene_raw : {len(match)} ligne(s)")
-        print(f"  siret={match.iloc[0]['siret']}  denom='{match.iloc[0]['denominationUsuelleEtablissement']}'  enseigne='{match.iloc[0]['enseigne1Etablissement']}'")
-        found = True
-        break
-if not found:
-    print("  ABSENT de sirene_raw → pas dans le fichier source INSEE")
-
-# ─── 3. DINUM - ban_key ────────────────────────────────────────────────────────
-print()
-print("=" * 60)
-print("3. DINUM ban_key vs BAN")
-print("=" * 60)
-row = con.execute("""
-    SELECT ban_key, addr_num, addr_type, addr_street, postal_code
-    FROM unified_records WHERE siret = '13002526500013'
-""").fetchone()
-if row:
-    bk, num, typ, street, cp = row
-    print(f"  ban_key SIRENE  : '{bk}'")
-    match = con.execute("SELECT ban_key FROM ban WHERE ban_key = ?", [bk]).fetchone()
-    print(f"  Match exact BAN : {'OUI' if match else 'NON'}")
-    # Chercher la vraie clé dans BAN pour ce CP + voie
-    alts = con.execute("""
-        SELECT ban_key FROM ban
-        WHERE code_postal = ? AND nom_voie LIKE '%SEGUR%'
-        LIMIT 3
-    """, [cp]).fetchall()
-    print(f"  Clés BAN proches (75007+SEGUR) : {[r[0] for r in alts]}")
-
-# ─── 4. CODES POSTAUX ──────────────────────────────────────────────────────────
-print()
-print("=" * 60)
-print("4. CODES POSTAUX")
-print("=" * 60)
-r = con.execute("""
-    SELECT
-        COUNT(*) AS total,
-        COUNT(postal_code) AS avec_cp,
-        COUNT(DISTINCT postal_code) AS distincts,
-        SUM(CASE WHEN postal_code IS NULL THEN 1 ELSE 0 END) AS sans_cp
+# Top 20 CP par nombre d'établissements
+top_cp = con.execute("""
+    SELECT postal_code, COUNT(*) as n
     FROM unified_records
-""").fetchone()
-print(f"  Total lignes      : {r[0]:,}")
-print(f"  Avec postal_code  : {r[1]:,} ({100*r[1]/r[0]:.1f}%)")
-print(f"  Sans postal_code  : {r[3]:,} ({100*r[3]/r[0]:.1f}%)")
-print(f"  CP distincts      : {r[2]:,}")
-print(f"  stats_by_postal   : {con.execute('SELECT COUNT(*) FROM stats_by_postal').fetchone()[0]:,}")
-# Exemples de codes qui manquent dans stats
-ex_missing = con.execute("""
-    SELECT DISTINCT u.postal_code
-    FROM unified_records u
-    WHERE u.postal_code IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM stats_by_postal s WHERE s.postal_code = u.postal_code)
-    LIMIT 5
+    WHERE postal_code IS NOT NULL
+    GROUP BY postal_code
+    ORDER BY n DESC
+    LIMIT 20
 """).fetchall()
-print(f"  Exemples CP absents de stats : {[r[0] for r in ex_missing]}")
+print("\nTop 20 codes postaux :")
+for cp, n in top_cp:
+    print(f"  {cp} : {n:>8,} établissements")
 
-# ─── 5. NAME NULL dans unified ─────────────────────────────────────────────────
-print()
+# Vérifier s'il existe des CP rejetés dans sirene_raw
+print("\n" + "=" * 60)
+print("CP dans sirene_raw qui ont été rejetés")
 print("=" * 60)
-print("5. NAME NULL dans unified_records")
-print("=" * 60)
-r2 = con.execute("""
-    SELECT
-        COUNT(*) AS total,
-        SUM(CASE WHEN name IS NULL THEN 1 ELSE 0 END) AS null_name,
-        SUM(CASE WHEN enseigne IS NOT NULL THEN 1 ELSE 0 END) AS has_enseigne
-    FROM unified_records
-""").fetchone()
-print(f"  name=NULL     : {r2[1]:,} / {r2[0]:,} ({100*r2[1]/r2[0]:.1f}%)")
-print(f"  enseigne≠NULL : {r2[2]:,} ({100*r2[2]/r2[0]:.1f}%) → fallback possible")
+
+# Charger un échantillon de codePostalEtablissement depuis sirene
+sample_raw = con.execute("""
+    SELECT DISTINCT codePostalEtablissement, COUNT(*) as n
+    FROM sirene
+    WHERE codePostalEtablissement IS NOT NULL
+      AND LENGTH(TRIM(codePostalEtablissement)) > 0
+    GROUP BY codePostalEtablissement
+    ORDER BY n DESC
+    LIMIT 30
+""").fetchall()
+print("\nTop 30 CP dans sirene (avant nettoyage) :")
+for cp, n in sample_raw:
+    clean_cp = con.execute("""
+        SELECT postal_code FROM unified_records 
+        WHERE postal_code = ? LIMIT 1
+    """, [cp.zfill(5) if len(cp) < 5 else cp]).fetchone()
+    status = "✓ OK" if clean_cp else "✗ REJETÉ"
+    print(f"  {cp:10s} → {cp.zfill(5) if len(cp)<5 else cp:5s}  {status:10s}  ({n:>6,} établ.)")
 
 con.close()
-print()
-print("=" * 60)
-print("FIN DU DIAGNOSTIC")
-print("=" * 60)

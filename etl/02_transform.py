@@ -47,7 +47,7 @@ def clean_str_series(s: pd.Series) -> pd.Series:
 def clean_postal_series(s: pd.Series) -> pd.Series:
     c = s.fillna('').astype(str).str.strip()
     c = c.where(c.str.len() >= 5, c.str.zfill(5))
-    valid = c.str.match(r'^\d{5}$') & (c >= '01000') & (c <= '98999')
+    valid = c.str.match(r'^\d{5}$')
     return c.where(valid, other=None)
 
 def clean_siret_series(s: pd.Series) -> pd.Series:

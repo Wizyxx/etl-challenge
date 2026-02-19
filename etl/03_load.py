@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-ETL CHALLENGE - PHASE 3: CHARGEMENT (v4)
-Corrections vs v3 :
-  - Ajout export SQLite FTS5 pour l'endpoint /search (imposé par le sujet)
-  - DuckDB reste pour /siret et /stats
+ETL CHALLENGE - PHASE 3: CHARGEMENT (v5)
+Améliorations vs v4 :
+  - Table de liaison siret_rna_link avec score de matching
+  - Matching 3 niveaux : SIRET exact (1.0), SIREN (0.95), fuzzy name+CP (0.9+)
+  - Blocking par code postal pour le fuzzy (performance)
+  - Export SQLite FTS5 pour /search
 """
 
 import duckdb
 import sqlite3
 import logging
+import pandas as pd
 from pathlib import Path
+from rapidfuzz import fuzz
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -19,6 +23,9 @@ DB_DIR      = Path("duckdb")
 DB_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH     = DB_DIR / "unified_data.duckdb"
 SQLITE_PATH = DB_DIR / "search.db"
+
+FUZZY_THRESHOLD = 90   # score Jaro-Winkler minimum (sur 100)
+FUZZY_BATCH     = 5000 # codes postaux traités par batch pour le logging
 
 
 def load_and_join():
@@ -69,80 +76,113 @@ def load_and_join():
         con.execute("CREATE TABLE unite_legale (siren VARCHAR, nom_ul VARCHAR, categorieEntreprise VARCHAR)")
 
     # =========================================================================
-    # 2. TABLE UNIFIEE (golden_record)
+    # 2. TABLE DE LIAISON siret_rna_link (matching 3 niveaux)
     # =========================================================================
-    logger.info("Creation table unifiee (jointures)...")
+    logger.info("Construction de la table siret_rna_link...")
+
+    # --- Niveau 1 : SIRET exact (14 chiffres) → score 1.0 ---
+    logger.info("   Niveau 1 — SIRET exact (14 chiffres)...")
+    con.execute("""
+        CREATE TABLE siret_rna_link AS
+        SELECT
+            s.siret,
+            r.id_rna,
+            1.0           AS match_score,
+            'SIRET_EXACT' AS match_method,
+            r.date_publi,
+            r.nature
+        FROM sirene s
+        INNER JOIN rna r ON s.siret = r.siret
+        WHERE r.siret IS NOT NULL
+    """)
+    n1 = con.execute("SELECT COUNT(*) FROM siret_rna_link").fetchone()[0]
+    logger.info(f"      → {n1:,} matchs niveau 1")
+
+    # --- Niveau 2 : SIREN (9 chiffres) → score 0.95 ---
+    # Uniquement pour les SIRENE pas encore matchés
+    logger.info("   Niveau 2 — SIREN (9 chiffres)...")
+    con.execute("""
+        INSERT INTO siret_rna_link
+        SELECT
+            s.siret,
+            t.id_rna,
+            0.95           AS match_score,
+            'SIREN_EXACT'  AS match_method,
+            t.date_publi,
+            t.nature
+        FROM sirene s
+        INNER JOIN (
+            SELECT
+                id_rna,
+                LEFT(siret, 9) AS siren_key,
+                date_publi,
+                nature,
+                ROW_NUMBER() OVER (PARTITION BY LEFT(siret, 9) ORDER BY id_rna) AS rn
+            FROM rna
+            WHERE siret IS NOT NULL
+        ) t ON s.siren = t.siren_key AND t.rn = 1
+        WHERE s.siret NOT IN (SELECT siret FROM siret_rna_link)
+    """)
+    n2 = con.execute("SELECT COUNT(*) FROM siret_rna_link").fetchone()[0] - n1
+    logger.info(f"      → {n2:,} matchs niveau 2")
+
+    # --- Niveau 3 : Blocking CP + Fuzzy name (Jaro-Winkler > 0.9) ---
+    logger.info("   Niveau 3 — Blocking CP + Fuzzy name (seuil > %d%%)...", FUZZY_THRESHOLD)
+    _fuzzy_match_by_cp(con)
+
+    n_total = con.execute("SELECT COUNT(*) FROM siret_rna_link").fetchone()[0]
+    n3 = n_total - n1 - n2
+    logger.info(f"      → {n3:,} matchs niveau 3 (fuzzy)")
+    logger.info(f"   TOTAL siret_rna_link : {n_total:,} liaisons")
+
+    # Index sur la table de liaison
+    con.execute("CREATE INDEX idx_link_siret ON siret_rna_link(siret)")
+    con.execute("CREATE INDEX idx_link_rna   ON siret_rna_link(id_rna)")
+
+    # =========================================================================
+    # 3. TABLE UNIFIEE (golden_record) — utilise siret_rna_link
+    # =========================================================================
+    logger.info("Creation table unifiee (jointures via siret_rna_link)...")
 
     con.execute("""
         CREATE TABLE unified_records AS
-        WITH
-
-        rna_by_siret AS (
-            SELECT * FROM rna WHERE siret IS NOT NULL
-        ),
-
-        rna_by_siren AS (
-            SELECT id_rna, siren_key, date_publi, nature
-            FROM (
-                SELECT
-                    id_rna,
-                    LEFT(siret, 9)  AS siren_key,
-                    date_publi,
-                    nature,
-                    ROW_NUMBER() OVER (PARTITION BY LEFT(siret, 9) ORDER BY id_rna) AS rn
-                FROM rna
-                WHERE siret IS NOT NULL
-            ) t
-            WHERE rn = 1
-        ),
-
-        sirene_rna AS (
-            SELECT
-                s.siret,
-                s.siren,
-                COALESCE(
-                    NULLIF(s.name_etab, ''),
-                    NULLIF(s.enseigne, ''),
-                    ul.nom_ul
-                ) AS name,
-                COALESCE(NULLIF(s.enseigne, ''), ul.nom_ul) AS enseigne,
-                s.addr_num,
-                s.addr_rep,
-                s.addr_type,
-                s.addr_street,
-                s.postal_code,
-                s.city,
-                s.commune_id,
-                s.naf,
-                s.status,
-                ul.categorieEntreprise AS categorie_entreprise,
-                s.ban_key,
-                s.etablissementSiege,
-                s.caractereEmployeurEtablissement,
-                COALESCE(ra.id_rna,    rb.id_rna)    AS id_rna,
-                COALESCE(ra.date_publi,rb.date_publi) AS date_publication_jo,
-                COALESCE(ra.id_rna,    rb.id_rna) IS NOT NULL AS is_association,
-                ra.nature                             AS asso_nature
-            FROM sirene s
-            LEFT JOIN unite_legale ul ON s.siren = ul.siren
-            LEFT JOIN rna_by_siret ra ON s.siret = ra.siret
-            LEFT JOIN rna_by_siren rb ON s.siren = rb.siren_key
-                                     AND ra.id_rna IS NULL
-        ),
-
-        full_join AS (
-            SELECT
-                sr.*,
-                b.lat                                       AS latitude,
-                b.lon                                       AS longitude,
-                CASE WHEN b.ban_key IS NOT NULL THEN 1.0
-                     ELSE NULL END                         AS geo_score,
-                (b.ban_key IS NOT NULL)                    AS is_ban_validated
-            FROM sirene_rna sr
-            LEFT JOIN ban b ON sr.ban_key = b.ban_key
-        )
-
-        SELECT * FROM full_join
+        SELECT
+            s.siret,
+            s.siren,
+            COALESCE(
+                NULLIF(s.name_etab, ''),
+                NULLIF(s.enseigne, ''),
+                ul.nom_ul
+            ) AS name,
+            COALESCE(NULLIF(s.enseigne, ''), ul.nom_ul) AS enseigne,
+            s.addr_num,
+            s.addr_rep,
+            s.addr_type,
+            s.addr_street,
+            s.postal_code,
+            s.city,
+            s.commune_id,
+            s.naf,
+            s.status,
+            ul.categorieEntreprise AS categorie_entreprise,
+            s.ban_key,
+            s.etablissementSiege,
+            s.caractereEmployeurEtablissement,
+            lnk.id_rna,
+            lnk.date_publi          AS date_publication_jo,
+            lnk.id_rna IS NOT NULL  AS is_association,
+            lnk.nature              AS asso_nature,
+            lnk.match_score         AS rna_match_score,
+            lnk.match_method        AS rna_match_method,
+            b.lat                   AS latitude,
+            b.lon                   AS longitude,
+            CASE WHEN b.ban_key IS NOT NULL THEN 1.0
+                 ELSE NULL END      AS geo_score,
+            (b.ban_key IS NOT NULL) AS is_ban_validated
+        FROM sirene s
+        LEFT JOIN unite_legale ul  ON s.siren = ul.siren
+        LEFT JOIN siret_rna_link lnk ON s.siret = lnk.siret
+        LEFT JOIN ban b            ON s.ban_key = b.ban_key
     """)
 
     n     = con.execute("SELECT COUNT(*) FROM unified_records").fetchone()[0]
@@ -152,15 +192,27 @@ def load_and_join():
     logger.info(f"   Avec RNA      : {n_rna:,}")
     logger.info(f"   Avec GPS      : {n_gps:,}")
 
-    # Vérification Croix Rouge
+    # Distribution des méthodes de matching
+    dist = con.execute("""
+        SELECT rna_match_method, COUNT(*) AS cnt
+        FROM unified_records
+        WHERE id_rna IS NOT NULL
+        GROUP BY rna_match_method
+        ORDER BY cnt DESC
+    """).fetchall()
+    for method, cnt in dist:
+        logger.info(f"      {method:<15} : {cnt:,}")
+
+    # Vérification Croix Rouge (Golden Case)
     res = con.execute("""
-        SELECT siret, name, id_rna, latitude, longitude
+        SELECT siret, name, id_rna, latitude, longitude, rna_match_score, rna_match_method
         FROM unified_records WHERE siret = '77567227200020'
     """).fetchone()
     if res:
-        logger.info(f"Croix Rouge : {res}")
+        logger.info(f"GOLDEN CASE — Croix Rouge : {res}")
         logger.info("   PREUVE 1 (RNA) : %s", "OK id_rna=" + str(res[2]) if res[2] else "ECHEC id_rna=NULL")
         logger.info("   PREUVE 2 (GPS) : %s", "OK" if res[3] else "ECHEC lat=NULL")
+        logger.info("   MATCH  : score=%.2f method=%s", res[5] or 0, res[6] or "NONE")
     else:
         logger.warning("SIRET Croix Rouge absent de unified_records")
 
@@ -224,6 +276,120 @@ def load_and_join():
     logger.info("BASE DUCKDB PRETE  : %s", DB_PATH)
     logger.info("BASE SQLITE PRETE  : %s", SQLITE_PATH)
     logger.info("=" * 60)
+
+
+def _fuzzy_match_by_cp(con: duckdb.DuckDBPyConnection):
+    """
+    Niveau 3 : Fuzzy matching RNA→SIRENE avec blocking par code postal.
+
+    Algorithme :
+      1. Récupérer les associations RNA SANS SIRET et avec un code postal
+      2. Pour chaque code postal (blocking), récupérer les SIRENE non encore matchés
+      3. Comparer les noms avec Jaro-Winkler (seuil > 90%)
+      4. Garder le meilleur match par association RNA
+
+    Jaro-Winkler est choisi car il est optimisé pour les noms propres
+    (poids plus fort sur le préfixe commun).
+    """
+    # Associations RNA sans SIRET, avec un code postal
+    rna_no_siret = con.execute("""
+        SELECT id_rna, titre_clean, adrs_codepostal, date_publi, nature
+        FROM rna
+        WHERE (siret IS NULL OR TRIM(siret) = '')
+          AND adrs_codepostal IS NOT NULL
+          AND titre_clean IS NOT NULL
+    """).fetchdf()
+
+    if rna_no_siret.empty:
+        logger.info("      Aucune association RNA sans SIRET à matcher")
+        return
+
+    logger.info(f"      {len(rna_no_siret):,} associations RNA sans SIRET à matcher")
+
+    # IDs RNA déjà matchés (niveaux 1-2)
+    already_matched_rna = set(
+        r[0] for r in con.execute("SELECT DISTINCT id_rna FROM siret_rna_link").fetchall()
+    )
+
+    # SIRETs déjà matchés
+    already_matched_siret = set(
+        r[0] for r in con.execute("SELECT DISTINCT siret FROM siret_rna_link").fetchall()
+    )
+
+    # Grouper RNA par code postal
+    rna_by_cp = rna_no_siret.groupby('adrs_codepostal')
+    cp_list = list(rna_by_cp.groups.keys())
+    logger.info(f"      {len(cp_list):,} codes postaux à traiter")
+
+    fuzzy_matches = []
+    processed = 0
+
+    for cp, rna_group in rna_by_cp:
+        # Récupérer les noms SIRENE pour ce CP (blocking)
+        sirene_cp = con.execute("""
+            SELECT siret,
+                   COALESCE(NULLIF(name_etab, ''), NULLIF(enseigne, '')) AS name_sirene
+            FROM sirene
+            WHERE postal_code = ?
+              AND COALESCE(NULLIF(name_etab, ''), NULLIF(enseigne, '')) IS NOT NULL
+        """, [cp]).fetchall()
+
+        if not sirene_cp:
+            processed += 1
+            continue
+
+        # Filtrer les SIRENE déjà matchés
+        sirene_cp = [(s, n) for s, n in sirene_cp if s not in already_matched_siret]
+        if not sirene_cp:
+            processed += 1
+            continue
+
+        sirene_names = [n for _, n in sirene_cp]
+        sirene_sirets = [s for s, _ in sirene_cp]
+
+        for _, row in rna_group.iterrows():
+            if row['id_rna'] in already_matched_rna:
+                continue
+
+            rna_name = row['titre_clean']
+            if not rna_name:
+                continue
+
+            # Jaro-Winkler sur tous les SIRENE du même CP
+            best_score = 0
+            best_siret = None
+
+            for i, sirene_name in enumerate(sirene_names):
+                score = fuzz.WRatio(rna_name, sirene_name, score_cutoff=FUZZY_THRESHOLD)
+                if score > best_score:
+                    best_score = score
+                    best_siret = sirene_sirets[i]
+
+            if best_siret and best_score >= FUZZY_THRESHOLD:
+                fuzzy_matches.append((
+                    best_siret,
+                    row['id_rna'],
+                    round(best_score / 100.0, 4),  # normaliser sur [0, 1]
+                    'FUZZY_NAME_CP',
+                    row['date_publi'],
+                    row['nature'],
+                ))
+                already_matched_siret.add(best_siret)
+                already_matched_rna.add(row['id_rna'])
+
+        processed += 1
+        if processed % FUZZY_BATCH == 0:
+            logger.info(f"      ... {processed:,}/{len(cp_list):,} CP traités, {len(fuzzy_matches):,} matchs fuzzy")
+
+    # Insérer les matchs fuzzy dans la table de liaison
+    if fuzzy_matches:
+        df_fuzzy = pd.DataFrame(fuzzy_matches,
+                                columns=['siret', 'id_rna', 'match_score',
+                                         'match_method', 'date_publi', 'nature'])
+        con.execute("INSERT INTO siret_rna_link SELECT * FROM df_fuzzy")
+        logger.info(f"      {len(fuzzy_matches):,} matchs fuzzy insérés")
+    else:
+        logger.info("      Aucun match fuzzy trouvé")
 
 
 def _build_sqlite_fts(con_duck: duckdb.DuckDBPyConnection):

@@ -11,5 +11,6 @@ pyarrow>=15.0.0
 tqdm==4.66.1
 requests==2.31.0
 python-Levenshtein==0.25.0
+rapidfuzz>=3.6.0
 orjson==3.9.15
 # redis==5.0.1  pour le cache

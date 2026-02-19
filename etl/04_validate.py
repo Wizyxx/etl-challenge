@@ -6,13 +6,15 @@ Reproduit exactement les cas de test du barème.
 """
 
 import duckdb
+import sqlite3
 import logging
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("duckdb/unified_data.duckdb")
+DB_PATH     = Path("duckdb/unified_data.duckdb")
+SQLITE_PATH = Path("duckdb/search.db")
 PASSED  = 0
 FAILED  = 0
 
@@ -48,7 +50,18 @@ def run_validation():
     n_cp_distinct = con.execute("SELECT COUNT(DISTINCT postal_code) FROM unified_records WHERE postal_code IS NOT NULL").fetchone()[0]
     
     n_stats   = con.execute("SELECT COUNT(*) FROM stats_by_postal").fetchone()[0]
-    n_search  = con.execute("SELECT COUNT(*) FROM search_index").fetchone()[0]
+
+    # siret_rna_link
+    n_link = con.execute("SELECT COUNT(*) FROM siret_rna_link").fetchone()[0]
+    n_fuzzy = con.execute("SELECT COUNT(*) FROM siret_rna_link WHERE match_method = 'FUZZY_NAME_CP'").fetchone()[0]
+
+    # SQLite FTS5
+    sqlite_ok = SQLITE_PATH.exists()
+    n_search = 0
+    if sqlite_ok:
+        conn_sqlite = sqlite3.connect(str(SQLITE_PATH))
+        n_search = conn_sqlite.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0]
+        conn_sqlite.close()
 
     # Affichage et vérifications
     check("Table unified_records non vide", n_unified > 1_000_000,
@@ -66,7 +79,10 @@ def run_validation():
     check("Table stats_by_postal",          n_stats   > 5000,
           f"({n_stats:,} entrées dans la table stats)")
     
-    check("Table search_index",             n_search  > 1_000_000,
+    check("Table siret_rna_link",            n_link    > 100_000,
+          f"({n_link:,} liaisons — dont {n_fuzzy:,} fuzzy)")
+
+    check("SQLite FTS5 (search)",            n_search  > 1_000_000,
           f"({n_search:,} — attendu > 1M)")
 
     # ─── 2. CAS DE TEST — DINUM (Exemple 1 du sujet) ─────────────────────
@@ -88,7 +104,8 @@ def run_validation():
     logger.info("\n 3. Croix Rouge (SIRET 77567227200020) — PREUVE PAR 3")
     siret_cr = "77567227200020"
     row = con.execute("""
-        SELECT siret, name, id_rna, latitude, longitude, is_ban_validated, status
+        SELECT siret, name, id_rna, latitude, longitude, is_ban_validated, status,
+               rna_match_score, rna_match_method
         FROM unified_records WHERE siret = ?
     """, [siret_cr]).fetchone()
 
@@ -100,6 +117,8 @@ def run_validation():
         check("PREUVE 2 — latitude non null",            row[3] is not None,       f"(lat={row[3]})")
         check("PREUVE 2 — longitude non null",           row[4] is not None,       f"(lon={row[4]})")
         check("Croix Rouge — statut = open",             row[6] == 'open',         f"({row[6]})")
+        check("Croix Rouge — match score",               row[7] is not None,       f"(score={row[7]})")
+        check("Croix Rouge — match method",              row[8] is not None,       f"(method={row[8]})")
 
     # ─── 4. CAS ERREUR 404 ────────────────────────────────────────────────
     logger.info("\n 4. Gestion 404 (SIRET inexistant)")
@@ -108,16 +127,21 @@ def run_validation():
     """).fetchone()[0]
     check("SIRET 99999999900000 absent de la base", fake == 0)
 
-    # ─── 5. RECHERCHE TEXTUELLE ───────────────────────────────────────────
+    # ─── 5. RECHERCHE TEXTUELLE (via SQLite FTS5) ─────────────────────
     logger.info("\n 5. Recherche textuelle (boulangerie, Lyon)")
-    rows = con.execute("""
-        SELECT siret, name_upper, city FROM search_index
-        WHERE name_upper LIKE '%BOULANGERIE%'
-          AND dept = '69'
-        LIMIT 10
-    """).fetchall()
-    check("Résultats pour 'boulangerie' dept=69",  len(rows) > 0,
-          f"({len(rows)} résultats)")
+    if SQLITE_PATH.exists():
+        conn_s = sqlite3.connect(str(SQLITE_PATH))
+        rows = conn_s.execute("""
+            SELECT f.siret, f.name, f.city FROM search_fts f
+            JOIN search_meta m ON f.siret = m.siret AND m.dept = '69'
+            WHERE search_fts MATCH 'boulangerie*'
+            LIMIT 10
+        """).fetchall()
+        conn_s.close()
+        check("Résultats pour 'boulangerie' dept=69",  len(rows) > 0,
+              f"({len(rows)} résultats)")
+    else:
+        check("SQLite FTS5 disponible", False, "search.db absent")
 
     # ─── 6. STATS CODE POSTAL ─────────────────────────────────────────────
     logger.info("\n 6. Stats code postal (75013)")
@@ -146,11 +170,15 @@ def run_validation():
     check(f"Requête /stats < 10ms", (t1 - t0) < 0.01, f"({(t1-t0)*1000:.1f}ms)")
 
     t0 = time.perf_counter()
-    con.execute("""
-        SELECT * FROM search_index
-        WHERE name_upper LIKE '%BOULANGERIE%' AND dept = '69'
-        LIMIT 10
-    """).fetchall()
+    if SQLITE_PATH.exists():
+        conn_s = sqlite3.connect(str(SQLITE_PATH))
+        conn_s.execute("""
+            SELECT f.siret, f.name, f.city FROM search_fts f
+            JOIN search_meta m ON f.siret = m.siret AND m.dept = '69'
+            WHERE search_fts MATCH 'boulangerie*'
+            LIMIT 10
+        """).fetchall()
+        conn_s.close()
     t1 = time.perf_counter()
     check(f"Requête /search < 200ms", (t1 - t0) < 0.2, f"({(t1-t0)*1000:.1f}ms)")
 

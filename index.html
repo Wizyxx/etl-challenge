@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Référentiel Unifié — SIRENE × RNA × BAN | 5 Days Challenge</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body class="bg-white">
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark bg-primary shadow-sm sticky-top">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-bold d-flex align-items-center" href="#" onclick="showHome()">
+            <i class="fa-solid fa-database me-2"></i>
+            <span>Référentiel Unifié</span>
+            <small class="ms-2 opacity-75 d-none d-md-inline" style="font-size:0.7rem; font-weight:400;">
+                SIRENE · RNA · BAN
+            </small>
+        </a>
+
+        <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-secondary" id="api-status">
+                    <i class="fa-solid fa-circle-notch fa-spin me-1"></i>
+                    API: Vérification...
+                </span>
+
+            <button class="btn btn-sm btn-outline-light d-none d-md-inline" onclick="window.location.reload()" title="Recharger la page">
+                <i class="fa-solid fa-rotate-right"></i>
+            </button>
+
+            <button class="btn btn-sm btn-outline-light" id="theme-toggle" title="Changer le thème">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+        </div>
+    </div>
+</nav>
+
+<!-- Page Accueil -->
+<div id="page-home">
+    <!-- CORRECTION : Suppression de border-bottom et shadow-sm pour une transition fluide vers le footer -->
+    <div class="bg-white py-5">
+        <div class="container text-center">
+            <div class="mb-3">
+                    <span class="badge bg-primary-subtle text-primary px-3 py-2">
+                        <i class="fa-solid fa-bolt me-1"></i>
+                        Base de données nationale unifiée
+                    </span>
+            </div>
+
+            <h1 class="display-5 fw-bold mb-3">
+                Recherchez n'importe quelle<br/>
+                <span class="text-primary">entreprise ou association</span>
+            </h1>
+
+            <p class="lead text-muted mb-4">
+                Accédez aux données légales (SIRENE), associatives (RNA) et géographiques (BAN)<br/>
+                de tous les établissements français, croisées en temps réel.
+            </p>
+
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <div class="card shadow-lg border-0">
+                        <div class="card-body p-4">
+                            <div class="input-group input-group-lg">
+                                    <span class="input-group-text bg-white border-end-0">
+                                        <i class="fa-solid fa-magnifying-glass text-muted"></i>
+                                    </span>
+                                <input
+                                        type="text"
+                                        class="form-control border-start-0 border-end-0"
+                                        id="search-input-home"
+                                        placeholder="Nom d'entreprise, enseigne, SIRET…"
+                                        autocomplete="off"
+                                        aria-label="Rechercher une entreprise ou association"
+                                >
+                                <input
+                                        type="text"
+                                        class="form-control"
+                                        id="dept-input-home"
+                                        placeholder="Dept (ex: 69)"
+                                        maxlength="5"
+                                        style="max-width: 140px;"
+                                        aria-label="Filtrer par département"
+                                >
+                                <button class="btn btn-primary px-4" id="btn-search-home">
+                                    <i class="fa-solid fa-search me-2"></i>Rechercher
+                                </button>
+                            </div>
+
+                            <div class="mt-3 d-flex justify-content-center gap-2 flex-wrap">
+                                <small class="text-muted me-2">Essayez :</small>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="fillSearchHome('Croix Rouge', '75')">
+                                    Croix Rouge (75)
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="fillSearchHome('Boulangerie', '69001')">
+                                    Boulangerie Lyon
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="fillSearchHome('Tennis Club', '69')">
+                                    Tennis Club (69)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row justify-content-center mt-5">
+                <div class="col-auto">
+                    <div class="text-center px-4">
+                        <div class="display-6 fw-bold text-primary">+30M</div>
+                        <small class="text-muted text-uppercase">Établissements</small>
+                    </div>
+                </div>
+                <div class="col-auto border-start"></div>
+                <div class="col-auto">
+                    <div class="text-center px-4">
+                        <div class="display-6 fw-bold text-primary">+400k</div>
+                        <small class="text-muted text-uppercase">Associations</small>
+                    </div>
+                </div>
+                <div class="col-auto border-start"></div>
+                <div class="col-auto">
+                    <div class="text-center px-4">
+                        <div class="display-6 fw-bold text-primary">3 sources</div>
+                        <small class="text-muted text-uppercase">SIRENE · RNA · BAN</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Page Résultats -->
+<div id="page-results" class="d-none">
+    <div class="container my-4">
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <button class="btn btn-outline-secondary btn-sm" onclick="showHome()">
+                <i class="fa-solid fa-arrow-left me-1"></i> Retour
+            </button>
+            <h5 class="mb-0" id="results-count">Résultats de recherche</h5>
+            <div></div> <!-- Spacer -->
+        </div>
+
+        <div class="row g-3">
+
+            <!-- Liste des résultats (Gauche) -->
+            <div class="col-lg-5">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0 fw-semibold">
+                            <i class="fa-solid fa-list me-2 text-primary"></i>Résultats
+                        </h6>
+                        <div id="loading-spinner" class="spinner-border spinner-border-sm text-primary d-none" role="status">
+                            <span class="visually-hidden">Chargement...</span>
+                        </div>
+                    </div>
+
+                    <div id="results-list" class="list-group list-group-flush" style="max-height: 70vh; overflow-y: auto;">
+                        <!-- Rempli par JS -->
+                        <div class="list-group-item text-center text-muted py-5">
+                            <i class="fa-regular fa-folder-open fa-3x mb-3 opacity-50"></i><br>
+                            Lancez une recherche pour voir les résultats.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Détail (Droite) -->
+            <div class="col-lg-7">
+
+                <!-- Placeholder (si rien sélectionné) -->
+                <div id="detail-placeholder" class="card shadow-sm border-0 h-100">
+                    <div class="card-body d-flex flex-column align-items-center justify-content-center text-center p-5">
+                        <i class="fa-regular fa-hand-pointer fa-4x text-muted opacity-50 mb-3"></i>
+                        <h5 class="text-muted">Sélectionnez un résultat</h5>
+                        <p class="text-muted small">
+                            Cliquez sur une entreprise ou association<br/>
+                            pour afficher ses détails complets.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Carte Détail -->
+                <div id="detail-card" class="card shadow-sm border-0 d-none">
+
+                    <div class="card-header bg-gradient-primary text-white py-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h4 class="mb-1 fw-bold" id="detail-title">Nom de l'entreprise</h4>
+                                <small class="opacity-75" id="detail-enseigne"></small>
+                            </div>
+                            <div class="d-flex flex-column gap-1 align-items-end">
+                                <span class="badge bg-white text-primary" id="detail-status-badge">ACTIF</span>
+                                <span class="badge bg-danger d-none" id="detail-asso-badge">
+                                        <i class="fa-solid fa-landmark me-1"></i>ASSOCIATION
+                                    </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Carte Leaflet -->
+                    <div id="map" style="height: 280px; width: 100%; background-color: #e9ecef;">
+                    </div>
+                    <div class="px-3 py-2 bg-light border-bottom">
+                        <small class="text-muted font-monospace" id="map-coords">
+                            <i class="fa-solid fa-location-dot me-1"></i>
+                            Coordonnées : —
+                        </small>
+                    </div>
+
+                    <div class="card-body">
+
+                        <!-- Bloc RNA (si association) -->
+                        <div id="detail-rna-block" class="alert alert-danger border-danger d-none mb-3">
+                            <div class="d-flex align-items-center gap-3">
+                                <i class="fa-solid fa-landmark fa-2x"></i>
+                                <div>
+                                    <div class="small text-uppercase fw-semibold opacity-75">Identifiant RNA</div>
+                                    <div class="fs-5 fw-bold font-monospace" id="detail-rna-id">—</div>
+                                    <div class="small" id="detail-rna-date"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Infos Légales -->
+                        <h6 class="text-uppercase text-muted small fw-semibold border-bottom pb-2 mb-3">
+                            <i class="fa-solid fa-building me-2"></i>Informations Légales
+                        </h6>
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <small class="text-muted text-uppercase d-block mb-1">SIRET</small>
+                                <span class="fw-semibold font-monospace" id="detail-siret">—</span>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted text-uppercase d-block mb-1">Catégorie Entreprise</small>
+                                <span class="fw-semibold" id="detail-categorie">—</span>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted text-uppercase d-block mb-1">Statut</small>
+                                <span id="detail-status-text">—</span>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted text-uppercase d-block mb-1">Enseigne</small>
+                                <span id="detail-enseigne-full">—</span>
+                            </div>
+                        </div>
+
+                        <!-- Localisation -->
+                        <h6 class="text-uppercase text-muted small fw-semibold border-bottom pb-2 mb-3">
+                            <i class="fa-solid fa-map-location-dot me-2"></i>Localisation
+                        </h6>
+                        <div class="row g-3">
+                            <div class="col-md-8">
+                                <small class="text-muted text-uppercase d-block mb-1">Adresse</small>
+                                <span id="detail-address">—</span>
+                            </div>
+                            <div class="col-md-4">
+                                <small class="text-muted text-uppercase d-block mb-1">Code Postal</small>
+                                <span class="fw-semibold" id="detail-postal">—</span>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted text-uppercase d-block mb-1">Ville</small>
+                                <span id="detail-city">—</span>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted text-uppercase d-block mb-1">Validation BAN</small>
+                                <span id="detail-ban-valid">—</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card-footer bg-light text-end">
+                        <small class="text-muted">
+                            <i class="fa-solid fa-database me-1"></i>
+                            Données unifiées en temps réel
+                        </small>
+                    </div>
+                </div>
+
+                <!-- Widget Stats (affiché si CP dispo) -->
+                <div id="stats-widget" class="card shadow-sm border-0 mt-3 d-none">
+                    <div class="card-header bg-white">
+                        <h6 class="mb-0 fw-semibold">
+                            <i class="fa-solid fa-chart-pie me-2 text-primary"></i>
+                            Statistiques par code postal
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="input-group mb-3">
+                            <input
+                                    type="text"
+                                    class="form-control"
+                                    id="stats-cp-input"
+                                    placeholder="ex: 75014"
+                                    maxlength="5"
+                                    aria-label="Code postal pour les statistiques"
+                            >
+                            <button class="btn btn-primary" onclick="loadStats()">
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+
+                        <div id="stats-content" class="d-none">
+                            <div class="mb-3">
+                                <small class="text-muted text-uppercase d-block mb-2">Entreprises</small>
+                                <div class="progress mb-1" style="height: 24px;">
+                                    <div class="progress-bar bg-primary" id="bar-companies" role="progressbar" style="width: 0;">
+                                        <span id="val-companies" class="fw-semibold">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <small class="text-muted text-uppercase d-block mb-2">Associations</small>
+                                <div class="progress mb-1" style="height: 24px;">
+                                    <div class="progress-bar bg-danger" id="bar-asso" role="progressbar" style="width: 0;">
+                                        <span id="val-asso" class="fw-semibold">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <small class="text-muted text-uppercase d-block mb-2">Fermés</small>
+                                <div class="progress mb-1" style="height: 24px;">
+                                    <div class="progress-bar bg-secondary" id="bar-closed" role="progressbar" style="width: 0;">
+                                        <span id="val-closed" class="fw-semibold">0</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-primary">
+                                <small class="text-uppercase fw-semibold d-block mb-1">Activité dominante</small>
+                                <div class="fw-bold" id="top-naf-code">—</div>
+                                <small class="text-muted" id="top-naf-count"></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Footer -->
+<footer class="bg-white border-top py-3 mt-5">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-md-6 text-muted small">
+                Données : INSEE (SIRENE) · Ministère de l'Intérieur (RNA) · IGN (BAN)
+            </div>
+            <div class="col-md-6 text-end text-muted small">
+                5 Days Challenge — Architecture ETL
+            </div>
+        </div>
+    </div>
+</footer>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- App Logic -->
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+
+</body>
+</html>

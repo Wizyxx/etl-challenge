@@ -1,19 +1,18 @@
-# Environnement virtuel
+# Fichiers systèmes (Mac/Windows)
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Dossiers d'éditeurs de code (VS Code, IntelliJ, etc.)
+.vscode/
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Dossiers virtuels Python
 venv/
+env/
 __pycache__/
 *.pyc
-
-# Données (TROP GROS pour GitHub)
-data_raw/
-data_parquet/
-duckdb/
-*.duckdb
-*.zip
-*.gz
-
-# Configuration et logs
-.env
-*.log
-exploration_log.txt
-ngrok

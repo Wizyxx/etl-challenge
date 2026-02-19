@@ -491,29 +491,35 @@ function renderDetailedFiche(data) {
     document.getElementById('detail-placeholder').classList.add('d-none');
     document.getElementById('detail-card').classList.remove('d-none');
 
-    const identity = data.identity || {};
-    const location = data.location || {};
-    const assoId = data.asso_id || null;
+    // Nouveau mapping selon la structure API réelle
+    // Champs principaux à plat, adresse dans data.address
+    const siret = data.siret || '—';
+    const rna = data.rna || null;
+    const name = data.name || '—';
+    const status = data.status || '—';
+    const nature = data.nature || '—';
+    const address = data.address || {};
 
     // Header : Nom + Badges
-    document.getElementById('detail-title').textContent = identity.nom_raison_sociale || '—';
-    document.getElementById('detail-enseigne').textContent = identity.enseigne
-        ? `Enseigne : ${identity.enseigne}`
-        : '';
+    document.getElementById('detail-title').textContent = name;
+    document.getElementById('detail-enseigne').textContent = nature && nature !== '—' ? `Nature : ${nature}` : '';
 
     // Badge statut
     const statusBadge = document.getElementById('detail-status-badge');
-    if (data.status === 'open') {
+    if (status === 'open') {
         statusBadge.textContent = 'ACTIF';
         statusBadge.className = 'badge bg-success';
-    } else {
+    } else if (status === 'closed') {
         statusBadge.textContent = 'FERMÉ';
+        statusBadge.className = 'badge bg-secondary';
+    } else {
+        statusBadge.textContent = status.toUpperCase();
         statusBadge.className = 'badge bg-secondary';
     }
 
-    // Badge association (affiché uniquement si asso_id non null)
+    // Badge association (affiché uniquement si RNA non null)
     const assoBadge = document.getElementById('detail-asso-badge');
-    if (assoId && assoId.id_rna) {
+    if (rna) {
         assoBadge.classList.remove('d-none');
     } else {
         assoBadge.classList.add('d-none');
@@ -521,48 +527,52 @@ function renderDetailedFiche(data) {
 
     // Bloc RNA (si association)
     const rnaBlock = document.getElementById('detail-rna-block');
-    if (assoId && assoId.id_rna) {
+    if (rna) {
         rnaBlock.classList.remove('d-none');
-        document.getElementById('detail-rna-id').textContent = assoId.id_rna;
-        document.getElementById('detail-rna-date').textContent = assoId.date_publication_jo
-            ? `Publication JO : ${assoId.date_publication_jo}`
-            : '';
+        document.getElementById('detail-rna-id').textContent = rna;
+        document.getElementById('detail-rna-date').textContent = '';
     } else {
         rnaBlock.classList.add('d-none');
     }
 
     // Infos légales
-    document.getElementById('detail-siret').textContent = identity.siret || '—';
-    document.getElementById('detail-categorie').textContent = identity.categorie_entreprise || '—';
-    document.getElementById('detail-status-text').innerHTML = data.status === 'open'
+    document.getElementById('detail-siret').textContent = siret;
+    document.getElementById('detail-categorie').textContent = nature || '—';
+    document.getElementById('detail-status-text').innerHTML = status === 'open'
         ? '<span class="text-success"><i class="fa-solid fa-circle-check me-1"></i>Actif</span>'
-        : '<span class="text-secondary"><i class="fa-solid fa-circle-xmark me-1"></i>Fermé</span>';
-    document.getElementById('detail-enseigne-full').textContent = identity.enseigne || '—';
+        : (status === 'closed'
+            ? '<span class="text-secondary"><i class="fa-solid fa-circle-xmark me-1"></i>Fermé</span>'
+            : `<span class="text-secondary">${status ? status.toUpperCase() : '—'}</span>`);
+    document.getElementById('detail-enseigne-full').textContent = nature || '—';
 
     // Localisation
     document.getElementById('detail-address').textContent = [
-        location.numero_voie,
-        location.type_voie,
-        location.libelle_voie
+        address.number,
+        address.street
     ].filter(Boolean).join(' ') || '—';
-    document.getElementById('detail-postal').textContent = location.code_postal || '—';
-    document.getElementById('detail-city').textContent = location.commune || '—';
+    document.getElementById('detail-postal').textContent = address.postal_code || '—';
+    document.getElementById('detail-city').textContent = address.city || '—';
+
+    // Affichage carte si coordonnées présentes (y compris 0)
+    if (typeof address.latitude === 'number' && typeof address.longitude === 'number' && !isNaN(address.latitude) && !isNaN(address.longitude)) {
+        updateMap(address.latitude, address.longitude, name);
+    }
 
     // Validation BAN
     const banValid = document.getElementById('detail-ban-valid');
-    if (location.is_ban_validated) {
+    if (address.is_ban_validated) {
         banValid.innerHTML = '<span class="text-success"><i class="fa-solid fa-circle-check me-1"></i>Validé BAN</span>';
     } else {
         banValid.innerHTML = '<span class="text-muted"><i class="fa-solid fa-circle-xmark me-1"></i>Non validé</span>';
     }
 
     // Pré-remplir le code postal dans le widget stats
-    if (location.code_postal) {
-        document.getElementById('stats-cp-input').value = location.code_postal;
+    if (address.postal_code) {
+        document.getElementById('stats-cp-input').value = address.postal_code;
         document.getElementById('stats-widget').classList.remove('d-none');
 
         // Charger automatiquement les stats
-        loadStats(location.code_postal).catch(console.error);
+        loadStats(address.postal_code).catch(console.error);
     }
 }
 

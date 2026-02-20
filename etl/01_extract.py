@@ -26,16 +26,38 @@ CHUNK_SIZE_SIRENE = 50_000
 CHUNK_SIZE_BAN    = 50_000
 
 
+def make_schema(cols, str_cols, bool_cols=None):
+    """
+    Construit un schéma PyArrow explicite pour éviter les conflits null/string
+    entre chunks. Toutes les colonnes str_cols sont forcées en pa.string(),
+    les bool_cols en pa.bool_().
+    """
+    fields = []
+    for col in cols:
+        if bool_cols and col in bool_cols:
+            fields.append(pa.field(col, pa.bool_()))
+        else:
+            fields.append(pa.field(col, pa.string()))
+    return pa.schema(fields)
+
+
 class ParquetStreamWriter:
-    """Écrit chunk par chunk dans un Parquet sans accumuler en RAM."""
-    def __init__(self, path: Path):
+    """Écrit chunk par chunk dans un Parquet sans accumuler en RAM.
+    Le schéma est fourni explicitement pour éviter les conflits null/string."""
+    def __init__(self, path: Path, schema: pa.Schema):
         self.path    = path
+        self.schema  = schema
         self._writer = None
 
     def write(self, df: pd.DataFrame):
-        table = pa.Table.from_pandas(df, preserve_index=False)
+        # Cast explicite : toutes les colonnes string sont forcées en str
+        # avant la conversion PyArrow — évite l'inférence null sur chunks vides
+        for field in self.schema:
+            if field.type == pa.string() and field.name in df.columns:
+                df[field.name] = df[field.name].fillna('').astype(str).replace('', None)
+        table = pa.Table.from_pandas(df, schema=self.schema, preserve_index=False)
         if self._writer is None:
-            self._writer = pq.ParquetWriter(str(self.path), table.schema,
+            self._writer = pq.ParquetWriter(str(self.path), self.schema,
                                             compression='snappy')
         self._writer.write_table(table)
 
@@ -59,9 +81,8 @@ SIRENE_COLS = [
     'trancheEffectifsEtablissement', 'etatAdministratifEtablissement',
     'caractereEmployeurEtablissement',
 ]
-# Toutes les colonnes texte forcées en str — évite l'inférence de type
-# (ex: denominationUsuelleEtablissement inféré 'double' dans certains chunks)
 SIRENE_DTYPES = {col: 'str' for col in SIRENE_COLS if col != 'etablissementSiege'}
+SIRENE_SCHEMA = make_schema(SIRENE_COLS, SIRENE_DTYPES, bool_cols=['etablissementSiege'])
 
 def extract_sirene():
     out = PROCESSED / "sirene_raw.parquet"
@@ -69,7 +90,7 @@ def extract_sirene():
         logger.info("⏩ SIRENE déjà extrait, skip.")
         return
     logger.info("🏢 SIRENE — extraction streaming...")
-    writer = ParquetStreamWriter(out)
+    writer = ParquetStreamWriter(out, SIRENE_SCHEMA)
     total  = 0
     with zipfile.ZipFile(RAW_DIR / "StockEtablissement_utf8.zip") as z:
         csv_file = [f for f in z.namelist() if f.endswith('.csv')][0]
@@ -90,8 +111,7 @@ def extract_sirene():
 
 
 # =============================================================================
-# 2. UNITE LEGALE (noms des entreprises — indispensable car
-#    denominationUsuelleEtablissement est NULL à 95% dans StockEtablissement)
+# 2. UNITE LEGALE
 # =============================================================================
 UL_COLS = [
     'siren',
@@ -101,7 +121,8 @@ UL_COLS = [
     'categorieJuridiqueUniteLegale',
     'categorieEntreprise',
 ]
-UL_DTYPES = {col: 'str' for col in UL_COLS}  # tout en str
+UL_DTYPES  = {col: 'str' for col in UL_COLS}
+UL_SCHEMA  = make_schema(UL_COLS, UL_DTYPES)
 
 def extract_unite_legale():
     out     = PROCESSED / "unite_legale_raw.parquet"
@@ -112,12 +133,10 @@ def extract_unite_legale():
         return
     if not ul_path.exists():
         logger.warning("⚠️  StockUniteLegale_utf8.zip absent de data_raw/")
-        logger.warning("   Téléchargez-le :")
-        logger.warning("   wget 'https://files.data.gouv.fr/insee-sirene/StockUniteLegale_utf8.zip' -O data_raw/StockUniteLegale_utf8.zip")
         return
 
     logger.info("🏛️  UniteLegale — extraction streaming...")
-    writer = ParquetStreamWriter(out)
+    writer = ParquetStreamWriter(out, UL_SCHEMA)
     total  = 0
     with zipfile.ZipFile(ul_path) as z:
         csv_file = [f for f in z.namelist() if f.endswith('.csv')][0]
@@ -147,7 +166,8 @@ RNA_COLS = [
     'adrs_codepostal', 'adrs_libcommune',
     'date_publi', 'nature', 'groupement',
 ]
-RNA_DTYPES = {col: 'str' for col in RNA_COLS}  # tout en str, évite les conflits de schema
+RNA_DTYPES = {col: 'str' for col in RNA_COLS}
+RNA_SCHEMA = make_schema(RNA_COLS, RNA_DTYPES)
 
 def extract_rna():
     out = PROCESSED / "rna_raw.parquet"
@@ -155,7 +175,7 @@ def extract_rna():
         logger.info("⏩ RNA déjà extrait, skip.")
         return
     logger.info("🤝 RNA — extraction (104 fichiers)...")
-    writer = ParquetStreamWriter(out)
+    writer = ParquetStreamWriter(out, RNA_SCHEMA)
     total  = 0
     with zipfile.ZipFile(RAW_DIR / "rna_waldec.zip") as z:
         csv_files = sorted(f for f in z.namelist() if f.endswith('.csv'))
@@ -174,6 +194,11 @@ def extract_rna():
                                              usecols=lambda c: c in RNA_COLS,
                                              dtype=RNA_DTYPES, low_memory=False,
                                              on_bad_lines='skip')
+                    # Ajouter les colonnes manquantes avec None
+                    for col in RNA_COLS:
+                        if col not in df.columns:
+                            df[col] = None
+                    df = df[RNA_COLS]  # ordre fixe
                     df['siret'] = df['siret'].str.strip().replace(
                         {'': None, 'nan': None, '0000000000000': None})
                     writer.write(df)
@@ -194,6 +219,16 @@ BAN_COLS   = ['numero', 'rep', 'nom_voie', 'code_postal', 'code_insee',
 BAN_DTYPES = {'numero': 'str', 'rep': 'str', 'nom_voie': 'str',
               'code_postal': 'str', 'code_insee': 'str', 'nom_commune': 'str',
               'lat': 'float32', 'lon': 'float32'}
+BAN_SCHEMA = pa.schema([
+    pa.field('numero',      pa.string()),
+    pa.field('rep',         pa.string()),
+    pa.field('nom_voie',    pa.string()),
+    pa.field('code_postal', pa.string()),
+    pa.field('code_insee',  pa.string()),
+    pa.field('nom_commune', pa.string()),
+    pa.field('lat',         pa.float32()),
+    pa.field('lon',         pa.float32()),
+])
 
 def extract_ban():
     out = PROCESSED / "ban_raw.parquet"
@@ -201,7 +236,7 @@ def extract_ban():
         logger.info("⏩ BAN déjà extrait, skip.")
         return
     logger.info("🗺️  BAN — extraction streaming (~50M lignes)...")
-    writer  = ParquetStreamWriter(out)
+    writer  = ParquetStreamWriter(out, BAN_SCHEMA)
     total   = 0
     skipped = 0
     for i, chunk in enumerate(pd.read_csv(
@@ -230,7 +265,7 @@ if __name__ == "__main__":
     logger.info("PHASE 1 — EXTRACTION (v3)")
     logger.info("=" * 60)
     extract_sirene()
-    extract_unite_legale()   # ← nouveau
+    extract_unite_legale()
     extract_rna()
     extract_ban()
     logger.info("=" * 60)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ETL CHALLENGE - PHASE 2: TRANSFORMATION (v3)
-Lit UNIQUEMENT depuis data_parquet/*_raw.parquet
+Lit depuis data_parquet/*_raw.parquet
 Aucun accès aux ZIP — c'est le rôle de 01_extract.py
 """
 
@@ -80,7 +80,7 @@ def transform_sirene():
     """
     dst = PROCESSED / "sirene_clean.parquet"
     if dst.exists():
-        logger.info("⏩ SIRENE transform déjà fait, skip.")
+        logger.info("SIRENE transform déjà fait, skip.")
         return
 
     logger.info("Transformation SIRENE (depuis sirene_raw.parquet)...")
@@ -138,10 +138,10 @@ def transform_sirene():
 def transform_rna():
     dst = PROCESSED / "rna_clean.parquet"
     if dst.exists():
-        logger.info("⏩ RNA transform déjà fait, skip.")
+        logger.info("RNA transform déjà fait, skip.")
         return
 
-    logger.info("🤝 Transformation RNA (depuis rna_raw.parquet)...")
+    logger.info("Transformation RNA (depuis rna_raw.parquet)...")
     df = pd.read_parquet(PROCESSED / "rna_raw.parquet")
     logger.info(f"   {len(df):,} lignes")
 
@@ -174,10 +174,10 @@ def transform_rna():
 def transform_ban():
     dst = PROCESSED / "ban_clean.parquet"
     if dst.exists():
-        logger.info("⏩ BAN transform déjà fait, skip.")
+        logger.info("BAN transform déjà fait, skip.")
         return
 
-    logger.info("🗺️  Transformation BAN (depuis ban_raw.parquet)...")
+    logger.info("Transformation BAN (depuis ban_raw.parquet)...")
     pf     = pq.ParquetFile(PROCESSED / "ban_raw.parquet")
     writer = None
     total  = 0

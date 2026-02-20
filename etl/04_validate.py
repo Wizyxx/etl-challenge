@@ -23,10 +23,10 @@ def check(label: str, condition: bool, detail: str = ""):
     global PASSED, FAILED
     if condition:
         # Ajout de {detail} ici pour voir tes chiffres même quand ça réussit !
-        logger.info(f"   ✅ PASS — {label:<35} {detail}")
+        logger.info(f"   PASS — {label:<35} {detail}")
         PASSED += 1
     else:
-        logger.error(f"   ❌ FAIL — {label:<35} {detail}")
+        logger.error(f"   FAIL — {label:<35} {detail}")
         FAILED += 1
 
 
@@ -46,7 +46,7 @@ def run_validation():
     n_rna_ok  = con.execute("SELECT COUNT(*) FROM unified_records WHERE id_rna IS NOT NULL").fetchone()[0]
     n_gps_ok  = con.execute("SELECT COUNT(*) FROM unified_records WHERE latitude IS NOT NULL").fetchone()[0]
     
-    # Nouveau : Nombre de codes postaux distincts
+    # Nombre de codes postaux distincts
     n_cp_distinct = con.execute("SELECT COUNT(DISTINCT postal_code) FROM unified_records WHERE postal_code IS NOT NULL").fetchone()[0]
     
     n_stats   = con.execute("SELECT COUNT(*) FROM stats_by_postal").fetchone()[0]
@@ -85,7 +85,7 @@ def run_validation():
     check("SQLite FTS5 (search)",            n_search  > 1_000_000,
           f"({n_search:,} — attendu > 1M)")
 
-    # ─── 2. CAS DE TEST — DINUM (Exemple 1 du sujet) ─────────────────────
+    # ─── 2. CAS DE TEST — DINUM  ─────────────────────
     logger.info("\n  2. DINUM (SIRET 13002526500013)")
     siret_dinum = "13002526500013"
     row = con.execute("""
@@ -100,7 +100,7 @@ def run_validation():
         check("DINUM — is_ban_validated = true",   row[5] == True,     f"({row[5]})")
         check("DINUM — statut = open",             row[6] == 'open',   f"({row[6]})")
 
-    # ─── 3. CAS DE TEST — CROIX ROUGE (Exemple 2 — le plus critique) ─────
+    # ─── 3. CAS DE TEST — CROIX ROUGE  ─────
     logger.info("\n 3. Croix Rouge (SIRET 77567227200020) — PREUVE PAR 3")
     siret_cr = "77567227200020"
     row = con.execute("""

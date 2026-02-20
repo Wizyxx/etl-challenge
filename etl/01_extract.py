@@ -87,7 +87,7 @@ SIRENE_SCHEMA = make_schema(SIRENE_COLS, SIRENE_DTYPES, bool_cols=['etablissemen
 def extract_sirene():
     out = PROCESSED / "sirene_raw.parquet"
     if out.exists():
-        logger.info("⏩ SIRENE déjà extrait, skip.")
+        logger.info("SIRENE déjà extrait, skip.")
         return
     logger.info("🏢 SIRENE — extraction streaming...")
     writer = ParquetStreamWriter(out, SIRENE_SCHEMA)
@@ -129,7 +129,7 @@ def extract_unite_legale():
     ul_path = RAW_DIR / "StockUniteLegale_utf8.zip"
 
     if out.exists():
-        logger.info("⏩ UniteLegale déjà extrait, skip.")
+        logger.info("UniteLegale déjà extrait, skip.")
         return
     if not ul_path.exists():
         logger.warning("⚠️  StockUniteLegale_utf8.zip absent de data_raw/")
@@ -172,7 +172,7 @@ RNA_SCHEMA = make_schema(RNA_COLS, RNA_DTYPES)
 def extract_rna():
     out = PROCESSED / "rna_raw.parquet"
     if out.exists():
-        logger.info("⏩ RNA déjà extrait, skip.")
+        logger.info("RNA déjà extrait, skip.")
         return
     logger.info("🤝 RNA — extraction (104 fichiers)...")
     writer = ParquetStreamWriter(out, RNA_SCHEMA)
@@ -233,7 +233,7 @@ BAN_SCHEMA = pa.schema([
 def extract_ban():
     out = PROCESSED / "ban_raw.parquet"
     if out.exists():
-        logger.info("⏩ BAN déjà extrait, skip.")
+        logger.info("BAN déjà extrait, skip.")
         return
     logger.info("🗺️  BAN — extraction streaming (~50M lignes)...")
     writer  = ParquetStreamWriter(out, BAN_SCHEMA)

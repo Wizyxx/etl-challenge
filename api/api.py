@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 ETL CHALLENGE - API FastAPI (v3)
-Conforme exactement au sujet :
+Conforme au demande du sujet :
   - /ping
   - /siret/{siret}            → format court (rna, name, address)
   - /search?q=...&dept=...    → address_city, is_association
   - /stats/distribution/{cp}  → postal_code, total_active_companies, top_activity
   - /stats/{cp}               → zone, total_entites, repartition, top_naf
-  - Codes erreur : 400, 404 au format exact du sujet
+  - Codes erreur : 400, 404 au format du sujet
 """
 
 from fastapi import FastAPI, HTTPException, Query
@@ -140,7 +140,7 @@ def ping():
 # ─────────────────────────────────────────────────────────────────────────────
 # B. GOLDEN RECORD — GET /api/v1/siret/{siret}
 #
-# Format de réponse (sujet, exemples 1 & 2) :
+# Format de réponse :
 # {
 #   "siret": "...",
 #   "rna": "W751000060" | null,
@@ -161,7 +161,7 @@ def ping():
 # Erreurs :
 #   400 : {"error": "INVALID_FORMAT", "message": "..."}
 #   404 : {"error": "Siret not found", "input": "<siret>"}
-#         ↑ Format EXACT du sujet exemple 3 (pas SIRET_NOT_FOUND)
+#         ↑ Format EXACT du sujet (pas SIRET_NOT_FOUND)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/siret/{siret}")
@@ -204,7 +204,6 @@ def get_siret(siret: str):
     ) = row
 
     # Construction de la rue : "RUE DIDOT" (type + libellé)
-    # Le sujet attend "AV DE SEGUR" et "RUE DIDOT" — soit type_voie + libelle_voie
     parts  = [p for p in [addr_type, addr_street] if p]
     street = " ".join(parts) if parts else None
 
@@ -229,12 +228,12 @@ def get_siret(siret: str):
 # ─────────────────────────────────────────────────────────────────────────────
 # C. RECHERCHE FULL-TEXT — GET /api/v1/search
 #
-# Paramètres acceptés (sujet mentionne les deux selon les exemples) :
+# Paramètres acceptés :
 #   q           : terme de recherche (obligatoire)
 #   dept        : code département 2 chiffres (ex: "69")
 #   postal_code : code postal 5 chiffres (ex: "69001")
 #
-# Format de réponse (sujet, exemples 4 & technique) :
+# Format de réponse :
 # {
 #   "query": "boulangerie",
 #   "filter_dept": "69",
@@ -307,7 +306,7 @@ def search(
             {
                 "siret":          r[0],
                 "name":           r[1],
-                "address_city":   r[2],       # ← "address_city" comme dans le sujet
+                "address_city":   r[2],
                 "is_association": bool(r[3]),
             }
             for r in rows
@@ -331,9 +330,8 @@ def _search_fallback(conn, q, dept, postal_code):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# D. STATS FORMAT SIMPLIFIÉ — GET /api/v1/stats/distribution/{code_postal}
+# D. STATS FORMAT  — GET /api/v1/stats/distribution/{code_postal}
 #
-# Route EXACTE de l'exemple 5 du sujet.
 # Format de réponse :
 # {
 #   "postal_code": "75013",
@@ -375,9 +373,8 @@ def get_stats_distribution(code_postal: str):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# E. STATS FORMAT DÉTAILLÉ — GET /api/v1/stats/{code_postal}
+# E. STATS FORMAT — GET /api/v1/stats/{code_postal}
 #
-# Route de la spécification technique (section 3 du sujet).
 # Format de réponse :
 # {
 #   "zone": "33000",

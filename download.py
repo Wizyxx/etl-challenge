@@ -126,11 +126,11 @@ def verify_file(path: Path, expected_size: int | None, min_size_mb: int) -> bool
     min_bytes  = min_size_mb * 1024 * 1024
 
     if local_size < min_bytes:
-        logger.warning(f"   ⚠️  {path.name} trop petit ({local_size / 1e6:.0f} Mo < {min_size_mb} Mo minimum)")
+        logger.warning(f"   {path.name} trop petit ({local_size / 1e6:.0f} Mo < {min_size_mb} Mo minimum)")
         return False
 
     if expected_size is not None and local_size != expected_size:
-        logger.warning(f"   ⚠️  Taille {path.name} : {local_size:,} octets (attendu {expected_size:,})")
+        logger.warning(f"   Taille {path.name} : {local_size:,} octets (attendu {expected_size:,})")
         return False
 
     return True
@@ -183,21 +183,21 @@ def download_source(source: dict, manifest: dict[str, str]) -> bool:
     min_mb = source["min_size_mb"]
     fname  = dest.name
 
-    logger.info(f"📦 {name}")
+    logger.info(f"{name}")
 
     # 1. Vérifier si déjà téléchargé et complet (taille + MD5)
     remote_size = get_remote_size(url)
     if verify_file(dest, remote_size, min_mb):
         # Vérification MD5 si le hash est connu dans le manifest
         if fname in manifest:
-            logger.info(f"   🔒 Vérification MD5 de {fname}...")
+            logger.info(f"   Vérification MD5 de {fname}...")
             current_md5 = compute_md5(dest)
             if current_md5 == manifest[fname]:
                 size_mb = dest.stat().st_size / 1e6
-                logger.info(f"   ✅ Déjà présent, taille + MD5 OK ({size_mb:.0f} Mo) — skip")
+                logger.info(f"   Déjà présent, taille + MD5 OK ({size_mb:.0f} Mo) — skip")
                 return True
             else:
-                logger.warning(f"   ⚠️  MD5 différent (fichier modifié ou corrompu), re-téléchargement")
+                logger.warning(f"   MD5 différent (fichier modifié ou corrompu), re-téléchargement")
                 dest.unlink(missing_ok=True)
         else:
             # Pas de hash connu : calculer et stocker pour les prochaines fois
@@ -205,42 +205,42 @@ def download_source(source: dict, manifest: dict[str, str]) -> bool:
             manifest[fname] = current_md5
             save_manifest(manifest)
             size_mb = dest.stat().st_size / 1e6
-            logger.info(f"   ✅ Déjà présent, taille OK ({size_mb:.0f} Mo), MD5 enregistré — skip")
+            logger.info(f"   Déjà présent, taille OK ({size_mb:.0f} Mo), MD5 enregistré — skip")
             return True
 
     # 2. Télécharger avec retry
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            logger.info(f"   🚀 Téléchargement (tentative {attempt}/{MAX_RETRIES})...")
+            logger.info(f"   Téléchargement (tentative {attempt}/{MAX_RETRIES})...")
             t0 = time.time()
             size = download_file(url, dest)
             elapsed = time.time() - t0
             speed = size / elapsed / 1e6 if elapsed > 0 else 0
-            logger.info(f"   ✅ {size / 1e6:.0f} Mo en {elapsed:.0f}s ({speed:.1f} Mo/s)")
+            logger.info(f"   {size / 1e6:.0f} Mo en {elapsed:.0f}s ({speed:.1f} Mo/s)")
 
             # 3. Vérification post-download (taille)
             if not verify_file(dest, remote_size, min_mb):
-                logger.error(f"   ❌ Vérification taille échouée après téléchargement")
+                logger.error(f"   Vérification taille échouée après téléchargement")
                 dest.unlink(missing_ok=True)
                 continue
 
             # 4. Calcul et stockage du MD5
-            logger.info(f"   🔒 Calcul MD5 de {fname}...")
+            logger.info(f"   Calcul MD5 de {fname}...")
             new_md5 = compute_md5(dest)
             manifest[fname] = new_md5
             save_manifest(manifest)
-            logger.info(f"   🔒 MD5 : {new_md5}")
+            logger.info(f"   MD5 : {new_md5}")
             return True
 
         except (URLError, HTTPError, IOError, OSError) as e:
-            logger.error(f"   ❌ Erreur tentative {attempt} : {e}")
+            logger.error(f"   Erreur tentative {attempt} : {e}")
             dest.with_suffix(dest.suffix + '.tmp').unlink(missing_ok=True)
             if attempt < MAX_RETRIES:
                 wait = 5 * attempt
-                logger.info(f"   ⏳ Attente {wait}s avant retry...")
+                logger.info(f"   Attente {wait}s avant retry...")
                 time.sleep(wait)
 
-    logger.error(f"   ❌ ÉCHEC DÉFINITIF : {name}")
+    logger.error(f"   ÉCHEC DÉFINITIF : {name}")
     return False
 
 

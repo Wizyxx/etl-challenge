@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ETL CHALLENGE - PHASE 1: EXTRACTION (v3)
+ETL CHALLENGE - PHASE 1: EXTRACTION
 Sources :
   - StockEtablissement_utf8.zip  → sirene_raw.parquet
   - StockUniteLegale_utf8.zip    → unite_legale_raw.parquet  (noms entreprises)
@@ -18,7 +18,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-RAW_DIR           = Path("data_raw")
+RAW_DIR           = Path("data/raw")
 PROCESSED         = Path("data_parquet")
 PROCESSED.mkdir(parents=True, exist_ok=True)
 

@@ -66,9 +66,9 @@ SIRENE_DTYPES = {col: 'str' for col in SIRENE_COLS if col != 'etablissementSiege
 def extract_sirene():
     out = PROCESSED / "sirene_raw.parquet"
     if out.exists():
-        logger.info("⏩ SIRENE déjà extrait, skip.")
+        logger.info("SIRENE déjà extrait, skip.")
         return
-    logger.info("🏢 SIRENE — extraction streaming...")
+    logger.info("SIRENE — extraction streaming...")
     writer = ParquetStreamWriter(out)
     total  = 0
     with zipfile.ZipFile(RAW_DIR / "StockEtablissement_utf8.zip") as z:
@@ -108,15 +108,15 @@ def extract_unite_legale():
     ul_path = RAW_DIR / "StockUniteLegale_utf8.zip"
 
     if out.exists():
-        logger.info("⏩ UniteLegale déjà extrait, skip.")
+        logger.info("UniteLegale déjà extrait, skip.")
         return
     if not ul_path.exists():
-        logger.warning("⚠️  StockUniteLegale_utf8.zip absent de data_raw/")
+        logger.warning("   StockUniteLegale_utf8.zip absent de data_raw/")
         logger.warning("   Téléchargez-le :")
         logger.warning("   wget 'https://files.data.gouv.fr/insee-sirene/StockUniteLegale_utf8.zip' -O data_raw/StockUniteLegale_utf8.zip")
         return
 
-    logger.info("🏛️  UniteLegale — extraction streaming...")
+    logger.info("UniteLegale — extraction streaming...")
     writer = ParquetStreamWriter(out)
     total  = 0
     with zipfile.ZipFile(ul_path) as z:
@@ -152,9 +152,9 @@ RNA_DTYPES = {col: 'str' for col in RNA_COLS}  # tout en str, évite les conflit
 def extract_rna():
     out = PROCESSED / "rna_raw.parquet"
     if out.exists():
-        logger.info("⏩ RNA déjà extrait, skip.")
+        logger.info("RNA déjà extrait, skip.")
         return
-    logger.info("🤝 RNA — extraction (104 fichiers)...")
+    logger.info("RNA — extraction (104 fichiers)...")
     writer = ParquetStreamWriter(out)
     total  = 0
     with zipfile.ZipFile(RAW_DIR / "rna_waldec.zip") as z:
@@ -198,9 +198,9 @@ BAN_DTYPES = {'numero': 'str', 'rep': 'str', 'nom_voie': 'str',
 def extract_ban():
     out = PROCESSED / "ban_raw.parquet"
     if out.exists():
-        logger.info("⏩ BAN déjà extrait, skip.")
+        logger.info("BAN déjà extrait, skip.")
         return
-    logger.info("🗺️  BAN — extraction streaming (~50M lignes)...")
+    logger.info("BAN — extraction streaming (~50M lignes)...")
     writer  = ParquetStreamWriter(out)
     total   = 0
     skipped = 0

@@ -266,7 +266,7 @@ def load_and_join():
     logger.info("   stats_by_postal OK")
 
     # =========================================================================
-    # 5. SQLITE FTS5 (pour /search — imposé par le sujet)
+    # 5. SQLITE FTS5 (pour /search)
     # =========================================================================
     logger.info("Export vers SQLite FTS5 (search_view)...")
     _build_sqlite_fts(con)

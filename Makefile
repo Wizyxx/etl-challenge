@@ -15,56 +15,56 @@ DB_PATH  := duckdb/unified_data.duckdb
 # ─── Cible par défaut ────────────────────────────────────────────────────────
 all: setup download ingest normalize match views
 	@echo ""
-	@echo "✅ Pipeline complet terminé. Lancez 'make api' pour démarrer le serveur."
+	@echo "Pipeline complet terminé. Lancez 'make api' pour démarrer le serveur."
 
 # ─── Environnement virtuel & dépendances ─────────────────────────────────────
 setup:
-	@echo "🔧 Création de l'environnement virtuel..."
+	@echo "Création de l'environnement virtuel..."
 	$(PYTHON) -m venv $(VENV)
 	$(PIP) install --upgrade pip -q
 	$(PIP) install -r requirements.txt -q
-	@echo "✅ Environnement prêt."
+	@echo "Environnement prêt."
 
 # ─── Téléchargement des sources brutes ───────────────────────────────────────
 download:
-	@echo "📥 Téléchargement des sources brutes..."
+	@echo "Téléchargement des sources brutes..."
 	$(PYRUN) download.py
 
 # ─── Phase 1 : Extraction CSV → Parquet ──────────────────────────────────────
 # Correspond à 01_extract.py
 ingest:
-	@echo "📦 Phase 1 — Extraction (CSV → Parquet)..."
+	@echo "Phase 1 — Extraction (CSV → Parquet)..."
 	$(PYRUN) etl/01_extract.py
-	@echo "✅ Extraction terminée."
+	@echo "Extraction terminée."
 
 # ─── Phase 2 : Normalisation ─────────────────────────────────────────────────
 # Correspond à 02_transform.py
 normalize:
-	@echo "🧹 Phase 2 — Normalisation (adresses, types, encodages)..."
+	@echo "Phase 2 — Normalisation (adresses, types, encodages)..."
 	$(PYRUN) etl/02_transform.py
-	@echo "✅ Normalisation terminée."
+	@echo "Normalisation terminée."
 
 # ─── Phase 3 : Matching SIRENE ↔ RNA + Jointures BAN ────────────────────────
 # Correspond à 03_load.py (jointures DuckDB + table golden_record)
 match:
-	@echo "🔗 Phase 3 — Matching SIRENE/RNA et jointure BAN (DuckDB)..."
+	@echo "Phase 3 — Matching SIRENE/RNA et jointure BAN (DuckDB)..."
 	$(PYRUN) etl/03_load.py
-	@echo "✅ Matching et chargement terminés."
+	@echo "Matching et chargement terminés."
 
 # ─── Phase 4 : Génération des vues optimisées ────────────────────────────────
 # Les vues (golden_record, search_index, stats_by_postal) sont créées dans 03_load.py
 # Cette cible est un alias sémantique pour la cohérence avec le sujet
 views: match
-	@echo "📊 Vues déjà générées lors du chargement (golden_record, search_index, stats_by_postal)."
+	@echo "Vues déjà générées lors du chargement (golden_record, search_index, stats_by_postal)."
 
 # ─── Validation de la base ───────────────────────────────────────────────────
 validate:
-	@echo "🔍 Validation de la base unifiée..."
+	@echo "Validation de la base unifiée..."
 	$(PYRUN) etl/04_validate.py
 
 # ─── Lancement de l'API ──────────────────────────────────────────────────────
 api:
-	@echo "🚀 Démarrage de l'API sur http://0.0.0.0:$(PORT) ..."
+	@echo "   Démarrage de l'API sur http://0.0.0.0:$(PORT) ..."
 	@echo "   Docs interactives : http://localhost:$(PORT)/docs"
 	DB_PATH=$(DB_PATH) $(VENV)/bin/uvicorn api.api:app \
 		--host 0.0.0.0 \
@@ -74,20 +74,20 @@ api:
 
 # ─── Lancement des tests d'intégrité JSON ────────────────────────────────────
 eval:
-	@echo "🧪 Tests d'intégrité JSON (cas Gold)..."
+	@echo "Tests d'intégrité JSON (cas Gold)..."
 	$(PYRUN) etl/04_validate.py
 
 # ─── Nettoyage des fichiers générés ──────────────────────────────────────────
 clean:
-	@echo "🗑️  Nettoyage des fichiers générés..."
+	@echo "Nettoyage des fichiers générés..."
 	rm -rf data_parquet/*.parquet
 	rm -rf duckdb/unified_data.duckdb duckdb/search.db
-	@echo "✅ data_parquet/ et duckdb/ nettoyés (data_raw conservé)."
+	@echo "data_parquet/ et duckdb/ nettoyés (data_raw conservé)."
 
 # Nettoyage complet (y compris venv)
 clean-all: clean
 	rm -rf $(VENV)
-	@echo "✅ Environnement virtuel supprimé."
+	@echo "Environnement virtuel supprimé."
 
 # ─── Aide ────────────────────────────────────────────────────────────────────
 help:

@@ -4,7 +4,6 @@
  * ══════════════════════════════════════════════════════════════════════
  * APP.JS — Logique Principale du Frontend
  * 5 Days Challenge — Référentiel Unifié SIRENE × RNA × BAN
- * Version finale — Alignée sur le backend FastAPI
  * ══════════════════════════════════════════════════════════════════════
  *
  * FORMAT API RÉEL (backend FastAPI) :
@@ -17,7 +16,7 @@
  *              is_ban_validated, latitude, longitude }
  * }
  *
- * GET /search?q=...&dept=...&postal_code=... → {
+ * GET /search?q=...&dept=... → {
  *   query, filter_dept, count,
  *   results: [{ siret, name, address_city, is_association }]
  * }
@@ -29,8 +28,8 @@
  * }
  *
  * Erreurs standardisées :
- *   404 → { "error": "Siret not found", "input": "..." }
- *   400 → { "error": "INVALID_FORMAT", "message": "..." }
+ *   404 → { "error": "SIRET_NOT_FOUND", "message": "..." }
+ *   400 → { "error": "INVALID_FORMAT",  "message": "..." }
  *
  * ══════════════════════════════════════════════════════════════════════
  */
@@ -40,9 +39,9 @@
 // VARIABLES GLOBALES
 // ═══════════════════════════════════════════════════════════════════════
 
-let leafletMap    = null;   // Instance Leaflet (singleton)
-let leafletMarker = null;   // Marqueur courant
-let currentResults = [];   // Résultats de la dernière recherche
+let leafletMap    = null;
+let leafletMarker = null;
+let currentResults = [];
 
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -50,7 +49,7 @@ let currentResults = [];   // Résultats de la dernière recherche
 // ═══════════════════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('App démarrée — Référentiel Unifié v3');
+    console.log('App démarrée — Référentiel Unifié v4');
     initTheme();
     checkBackendHealth().catch(err => console.error('Healthcheck échoué:', err));
     setupEventListeners();
@@ -69,7 +68,7 @@ async function checkBackendHealth() {
             statusBadge.innerHTML = '<i class="fa-solid fa-circle-check me-1"></i>API: En ligne';
             statusBadge.className = 'badge bg-success';
         } else {
-            throw new Error('Réponse inattendue du serveur');
+            throw new Error('Réponse inattendue');
         }
     } catch (error) {
         statusBadge.innerHTML = '<i class="fa-solid fa-circle-xmark me-1"></i>API: Hors ligne';
@@ -85,23 +84,31 @@ async function checkBackendHealth() {
 // ═══════════════════════════════════════════════════════════════════════
 
 function setupEventListeners() {
-    // ── Page Home ──
-    const btnHome    = document.getElementById('btn-search-home');
-    const inputHome  = document.getElementById('search-input-home');
-    const deptHome   = document.getElementById('dept-input-home');
-    const toggleBtn  = document.getElementById('theme-toggle');
+
+    // ── Page Home — recherche ──
+    const btnHome   = document.getElementById('btn-search-home');
+    const inputHome = document.getElementById('search-input-home');
+    const deptHome  = document.getElementById('dept-input-home');
 
     const triggerHome = () => {
         handleSearch(inputHome.value.trim(), deptHome.value.trim()).catch(console.error);
     };
 
-    if (btnHome) btnHome.addEventListener('click', triggerHome);
+    if (btnHome)  btnHome.addEventListener('click', triggerHome);
     [inputHome, deptHome].forEach(el => {
         if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') triggerHome(); });
     });
 
-    // ── Page Résultats (barre de re-recherche) ──
-    const btnResults  = document.getElementById('btn-search-results');
+    // ── Page Home — stats ──
+    const cpInputHome = document.getElementById('stats-cp-input-home');
+    if (cpInputHome) {
+        cpInputHome.addEventListener('keydown', e => {
+            if (e.key === 'Enter') loadStatsHome().catch(console.error);
+        });
+    }
+
+    // ── Page Résultats — re-recherche ──
+    const btnResults   = document.getElementById('btn-search-results');
     const inputResults = document.getElementById('search-input-results');
     const deptResults  = document.getElementById('dept-input-results');
 
@@ -116,7 +123,7 @@ function setupEventListeners() {
         if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') triggerResults(); });
     });
 
-    // ── Stats ──
+    // ── Page Résultats — stats ──
     const cpInput = document.getElementById('stats-cp-input');
     if (cpInput) {
         cpInput.addEventListener('keydown', e => {
@@ -125,47 +132,41 @@ function setupEventListeners() {
     }
 
     // ── Theme toggle ──
+    const toggleBtn = document.getElementById('theme-toggle');
     if (toggleBtn) toggleBtn.addEventListener('click', toggleTheme);
 }
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// NAVIGATION — showHome() avec CLEAN STATE complet
+// NAVIGATION
 // ═══════════════════════════════════════════════════════════════════════
 
 function showHome() {
-    // 1. Afficher Home, masquer Résultats
     document.getElementById('page-home').classList.remove('d-none');
     document.getElementById('page-results').classList.add('d-none');
 
-    // 2. Vider les champs de recherche de la HOME
+    // Vider les champs home
     const homeInput = document.getElementById('search-input-home');
     const homeDept  = document.getElementById('dept-input-home');
     if (homeInput) homeInput.value = '';
     if (homeDept)  homeDept.value  = '';
 
-    // 3. Focus sur le champ de recherche
     setTimeout(() => { if (homeInput) homeInput.focus(); }, 100);
-
-    // 4. Réinitialiser l'état complet de la page résultats
     resetResultsState();
-
-    // 5. Réinitialiser la carte Leaflet (sans la détruire — juste recentrer sur la France)
     resetMap();
 }
 
-/**
- * Remet la page résultats dans son état initial :
- * liste vide, fiche masquée, placeholder visible, stats cachées
- */
+function showResults() {
+    document.getElementById('page-home').classList.add('d-none');
+    document.getElementById('page-results').classList.remove('d-none');
+}
+
 function resetResultsState() {
     currentResults = [];
 
-    // Compteur
     const countEl = document.getElementById('results-count');
     if (countEl) countEl.textContent = 'Résultats de recherche';
 
-    // Liste résultats → placeholder
     const resultsList = document.getElementById('results-list');
     if (resultsList) {
         resultsList.innerHTML = `
@@ -176,31 +177,23 @@ function resetResultsState() {
         `;
     }
 
-    // Masquer spinner
     const spinner = document.getElementById('loading-spinner');
     if (spinner) spinner.classList.add('d-none');
 
-    // Masquer fiche détaillée, afficher placeholder
     document.getElementById('detail-card').classList.add('d-none');
     document.getElementById('detail-placeholder').classList.remove('d-none');
 
-    // Masquer widget stats
     const statsWidget = document.getElementById('stats-widget');
     if (statsWidget) statsWidget.classList.add('d-none');
 
-    // Vider la barre de re-recherche de la page résultats
     const inputResults = document.getElementById('search-input-results');
     const deptResults  = document.getElementById('dept-input-results');
     if (inputResults) inputResults.value = '';
     if (deptResults)  deptResults.value  = '';
 
-    // Reset des champs de la fiche
     resetDetailCard();
 }
 
-/**
- * Vide tous les champs de la fiche Golden Record
- */
 function resetDetailCard() {
     const fields = [
         'detail-title', 'detail-enseigne', 'detail-siret',
@@ -215,15 +208,12 @@ function resetDetailCard() {
         if (el) el.textContent = '—';
     });
 
-    // Reset badge statut
     const statusBadge = document.getElementById('detail-status-badge');
     if (statusBadge) { statusBadge.textContent = ''; statusBadge.className = 'badge'; }
 
-    // Masquer badge asso et bloc RNA
     document.getElementById('detail-asso-badge')?.classList.add('d-none');
     document.getElementById('detail-rna-block')?.classList.add('d-none');
 
-    // Reset barres de stats
     ['bar-companies', 'bar-asso', 'bar-closed'].forEach(id => {
         const bar = document.getElementById(id);
         if (bar) { bar.style.width = '0%'; bar.setAttribute('aria-valuenow', '0'); }
@@ -233,22 +223,13 @@ function resetDetailCard() {
     if (statsContent) statsContent.classList.add('d-none');
 }
 
-/**
- * Recentre la carte sur la France sans la détruire
- */
 function resetMap() {
     if (leafletMap) {
-        // Supprimer le marqueur
         if (leafletMarker) {
             leafletMap.removeLayer(leafletMarker);
             leafletMarker = null;
         }
-        // Recentrer sur la France
-        try {
-            leafletMap.setView([46.603354, 1.888334], 5);
-        } catch (e) {
-            console.warn('resetMap: impossible de recentrer', e);
-        }
+        try { leafletMap.setView([46.603354, 1.888334], 5); } catch (e) { /* ignore */ }
     }
 
     const coordsDiv = document.getElementById('map-coords');
@@ -257,16 +238,12 @@ function resetMap() {
     }
 }
 
-function showResults() {
-    document.getElementById('page-home').classList.add('d-none');
-    document.getElementById('page-results').classList.remove('d-none');
-}
-
 
 // ═══════════════════════════════════════════════════════════════════════
-// RECHERCHE
-// GET /search?q=...&dept=...  ou  &postal_code=...
-// Réponse : { query, filter_dept, count, results: [{siret, name, address_city, is_association}] }
+// RECHERCHE PRINCIPALE
+// Règle :
+//   - 14 chiffres → GET /siret/{siret} directement
+//   - sinon       → GET /search?q=...&dept=...
 // ═══════════════════════════════════════════════════════════════════════
 
 async function handleSearch(query, dept) {
@@ -278,42 +255,53 @@ async function handleSearch(query, dept) {
         return;
     }
 
-    // Si numérique : forcer SIRET 14 chiffres ou SIREN 9 chiffres
-    if (/^\d+$/.test(q) && q.length !== 14 && q.length !== 9) {
-        showAlert('warning', 'Format invalide', 'Un SIRET doit contenir 14 chiffres, un SIREN 9 chiffres.');
+    // ── CAS 1 : SIRET exact (14 chiffres) → fiche directe ──────────────
+    if (/^\d{14}$/.test(q)) {
+        showResults();
+        // Pré-remplir la barre de re-recherche
+        const ir = document.getElementById('search-input-results');
+        const dr = document.getElementById('dept-input-results');
+        if (ir) ir.value = q;
+        if (dr) dr.value = d;
+        // Vider la liste, afficher la fiche directement
+        resetResultsState();
+        document.getElementById('detail-placeholder').classList.add('d-none');
+        document.getElementById('detail-card').classList.remove('d-none');
+        document.getElementById('detail-title').textContent = 'Chargement…';
+        await loadDetailedFiche(q);
         return;
     }
 
-    // Basculer vers la page résultats
+    // ── CAS 2 : Format numérique invalide ──────────────────────────────
+    if (/^\d+$/.test(q) && q.length !== 14) {
+        showAlert('warning', 'Format invalide', 'Un SIRET doit contenir exactement 14 chiffres.');
+        return;
+    }
+
+    // ── CAS 3 : Recherche textuelle → /search?q=...&dept=... ───────────
     showResults();
 
-    const loader       = document.getElementById('loading-spinner');
-    const resultsList  = document.getElementById('results-list');
-    document.getElementById('results-count');
+    const loader      = document.getElementById('loading-spinner');
+    const resultsList = document.getElementById('results-list');
     loader.classList.remove('d-none');
     resultsList.innerHTML = '';
 
-    // Pré-remplir la barre de re-recherche
-    const inputResults = document.getElementById('search-input-results');
-    const deptResults  = document.getElementById('dept-input-results');
-    if (inputResults) inputResults.value = q;
-    if (deptResults)  deptResults.value  = d;
+    // Pré-remplir barre re-recherche
+    const ir = document.getElementById('search-input-results');
+    const dr = document.getElementById('dept-input-results');
+    if (ir) ir.value = q;
+    if (dr) dr.value = d;
 
-    // Réinitialiser la fiche à droite
     document.getElementById('detail-card').classList.add('d-none');
     document.getElementById('detail-placeholder').classList.remove('d-none');
     document.getElementById('stats-widget').classList.add('d-none');
 
     try {
-        // Construction des paramètres
+        // Si l'utilisateur entre 5 chiffres dans le champ dept → on extrait les 2 premiers
         const params = new URLSearchParams({ q });
         if (d) {
-            // 5 chiffres → code postal ; sinon → département
-            if (/^\d{5}$/.test(d)) {
-                params.append('postal_code', d);
-            } else {
-                params.append('dept', d);
-            }
+            const deptVal = d.length === 5 ? d.substring(0, 2) : d;
+            params.append('dept', deptVal);
         }
 
         const data = await apiCall(`${API_ENDPOINTS.SEARCH}?${params.toString()}`);
@@ -322,17 +310,20 @@ async function handleSearch(query, dept) {
 
     } catch (error) {
         console.warn('API /search inaccessible, mode DÉMO:', error.message);
-        await new Promise(r => setTimeout(r, 400));
-        const mockData = getMockSearchData(q);
+        await new Promise(r => setTimeout(r, 300));
+        const mockData = getMockSearchData(q, d);
         currentResults = mockData.results;
         renderResults(mockData);
         showAlert('info', 'Mode Démonstration', 'API hors ligne — données de test affichées.');
     }
 }
 
-/**
- * Affiche les résultats dans la liste gauche.
- */
+
+// ═══════════════════════════════════════════════════════════════════════
+// RENDU LISTE RÉSULTATS
+// Chaque item : { siret, name, address_city, is_association }
+// ═══════════════════════════════════════════════════════════════════════
+
 function renderResults(data) {
     const loader       = document.getElementById('loading-spinner');
     const resultsList  = document.getElementById('results-list');
@@ -343,10 +334,13 @@ function renderResults(data) {
     const count   = data.count   || 0;
     const results = data.results || [];
 
-    resultsCount.innerHTML = `
-        <strong>${count}</strong> résultat${count > 1 ? 's' : ''}
-        pour « <em>${escapeHtml(data.query || '')}</em> »
-    `;
+    if (resultsCount) {
+        resultsCount.innerHTML = `
+            <strong>${count}</strong> résultat${count > 1 ? 's' : ''}
+            ${data.query ? `pour « <em>${escapeHtml(data.query)}</em> »` : ''}
+            ${data.filter_dept ? `— Dép. <strong>${escapeHtml(data.filter_dept)}</strong>` : ''}
+        `;
+    }
 
     if (count === 0 || results.length === 0) {
         resultsList.innerHTML = `
@@ -362,11 +356,11 @@ function renderResults(data) {
     resultsList.innerHTML = '';
 
     results.forEach((item, index) => {
-        const isAsso = item.is_association === true;
+        const isAsso    = item.is_association === true;
         const cityLabel = item.address_city || item.city || '—';
 
-        const iconClass  = isAsso ? 'fa-landmark text-danger' : 'fa-building text-primary';
-        const badgeHtml  = isAsso
+        const iconClass = isAsso ? 'fa-landmark text-danger' : 'fa-building text-primary';
+        const badgeHtml = isAsso
             ? '<span class="badge bg-danger ms-2"><i class="fa-solid fa-landmark me-1"></i>Association</span>'
             : '<span class="badge bg-primary ms-2"><i class="fa-solid fa-building me-1"></i>Entreprise</span>';
 
@@ -391,7 +385,6 @@ function renderResults(data) {
         `;
 
         card.addEventListener('click', () => {
-            // Highlight sélection
             document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
             card.classList.add('active');
             loadDetailedFiche(item.siret).catch(console.error);
@@ -403,18 +396,12 @@ function renderResults(data) {
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// FICHE DÉTAILLÉE (Golden Record)
-// GET /siret/{siret}
-// Réponse : { siret, rna, name, status, nature,
-//             address: { number, street, postal_code, city,
-//                        is_ban_validated, latitude, longitude } }
+// FICHE DÉTAILLÉE — GET /siret/{siret}
 // ═══════════════════════════════════════════════════════════════════════
 
 async function loadDetailedFiche(siret) {
     if (!siret) return;
-    console.log(`Chargement fiche : ${siret}`);
 
-    // Afficher card, masquer placeholder
     document.getElementById('detail-card').classList.remove('d-none');
     document.getElementById('detail-placeholder').classList.add('d-none');
     document.getElementById('detail-title').textContent = 'Chargement…';
@@ -423,7 +410,6 @@ async function loadDetailedFiche(siret) {
     try {
         data = await apiCall(API_ENDPOINTS.SIRET(siret));
     } catch (error) {
-        // Mode démo
         console.warn('API /siret inaccessible:', error.message);
         data = getMockFiche(siret);
         if (!data) {
@@ -437,9 +423,6 @@ async function loadDetailedFiche(siret) {
     if (data) renderDetailedFiche(data);
 }
 
-/**
- * Remplit tous les champs de la fiche.
- */
 function renderDetailedFiche(data) {
     const address = data.address || {};
 
@@ -468,13 +451,12 @@ function renderDetailedFiche(data) {
         assoBadge.classList.add('d-none');
     }
 
-    // ── Bloc RNA (si association) ────────────────────────────────────────
+    // ── Bloc RNA — PREUVE 1 ──────────────────────────────────────────────
     const rnaBlock = document.getElementById('detail-rna-block');
     if (data.rna) {
         rnaBlock.classList.remove('d-none');
         document.getElementById('detail-rna-id').textContent = data.rna;
 
-        // Nature / date publication JO
         const dateEl = document.getElementById('detail-rna-date');
         if (data.date_publication_jo) {
             dateEl.textContent = `Publication JO : ${data.date_publication_jo}`;
@@ -489,19 +471,15 @@ function renderDetailedFiche(data) {
 
     // ── Informations légales ─────────────────────────────────────────────
     document.getElementById('detail-siret').textContent = data.siret || '—';
-
-    // categorie_entreprise non exposé par l'API → toujours —
-    document.getElementById('detail-categorie').textContent = '—';
+    document.getElementById('detail-categorie').textContent = data.categorie_entreprise || '—';
 
     document.getElementById('detail-status-text').innerHTML = data.status === 'open'
         ? '<span class="text-success"><i class="fa-solid fa-circle-check me-1"></i>Actif</span>'
         : '<span class="text-secondary"><i class="fa-solid fa-circle-xmark me-1"></i>Fermé</span>';
 
-    // Enseigne non exposée par l'API
-    document.getElementById('detail-enseigne-full').textContent = '—';
+    document.getElementById('detail-enseigne-full').textContent = data.enseigne || '—';
 
-    // ── Localisation ─────────────────────────────────────────────────────
-    // address.street est déjà concaténé (type_voie + libelle_voie) par le backend
+    // ── Localisation — PREUVE BAN ─────────────────────────────────────────
     document.getElementById('detail-address').textContent = [address.number, address.street].filter(Boolean).join(' ') || '—';
     document.getElementById('detail-postal').textContent  = address.postal_code || '—';
     document.getElementById('detail-city').textContent    = address.city        || '—';
@@ -513,7 +491,7 @@ function renderDetailedFiche(data) {
         banEl.innerHTML = '<span class="text-muted"><i class="fa-solid fa-circle-xmark me-1"></i>Non validé</span>';
     }
 
-    // ── Carte Leaflet ─────────────────────────────────────────────────────
+    // ── Carte Leaflet — PREUVE 2 ───────────────────────────────────────────
     if (address.latitude && address.longitude) {
         updateMap(address.latitude, address.longitude, data.name || 'Établissement');
     } else {
@@ -525,7 +503,7 @@ function renderDetailedFiche(data) {
         }
     }
 
-    // ── Widget Stats (pré-rempli avec le CP) ─────────────────────────────
+    // ── Widget Stats (pré-rempli avec le CP de la fiche) ─────────────────
     if (address.postal_code) {
         const cpInput = document.getElementById('stats-cp-input');
         if (cpInput) cpInput.value = address.postal_code;
@@ -553,8 +531,6 @@ function initMap() {
         maxZoom:     19,
         attribution: '&copy; OpenStreetMap France',
     }).addTo(leafletMap);
-
-    console.log('Carte Leaflet initialisée');
 }
 
 function updateMap(lat, lon, label) {
@@ -562,12 +538,8 @@ function updateMap(lat, lon, label) {
 
     try { leafletMap.invalidateSize(); } catch (e) { /* ignore */ }
 
-    if (!lat || !lon || isNaN(parseFloat(lat)) || isNaN(parseFloat(lon))) {
-        console.warn('Coordonnées invalides:', lat, lon);
-        return;
-    }
+    if (!lat || !lon || isNaN(parseFloat(lat)) || isNaN(parseFloat(lon))) return;
 
-    // Supprimer l'ancien marqueur
     if (leafletMarker) leafletMap.removeLayer(leafletMarker);
 
     const defaultIcon = L.icon({
@@ -609,13 +581,15 @@ function updateMap(lat, lon, label) {
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// STATISTIQUES
-// GET /stats/{cp}
+// STATISTIQUES — GET /stats/{cp}
 // Réponse : { zone, total_entites,
 //             repartition: { entreprises_pures, associations, etablissements_fermes },
 //             top_naf: { code, libelle, count } }
 // ═══════════════════════════════════════════════════════════════════════
 
+/**
+ * Stats sur la page RÉSULTATS (widget sous la fiche)
+ */
 async function loadStats(cpOverride) {
     const cpInput = document.getElementById('stats-cp-input');
     const cpVal   = cpOverride || (cpInput ? cpInput.value.trim() : '');
@@ -631,47 +605,79 @@ async function loadStats(cpOverride) {
 
     try {
         const data = await apiCall(API_ENDPOINTS.STATS(cpVal));
-        renderStats(data);
+        renderStats(data, 'results');
     } catch (error) {
         console.warn('API /stats inaccessible, mode DÉMO:', error.message);
-        renderStats(getMockStats(cpVal));
+        renderStats(getMockStats(cpVal), 'results');
     }
 }
 
 /**
- * Affiche les statistiques.
+ * Stats sur la page HOME (widget toujours visible)
  */
-function renderStats(data) {
-    const statsContent = document.getElementById('stats-content');
+async function loadStatsHome(cpOverride) {
+    const cpInput = document.getElementById('stats-cp-input-home');
+    const cpVal   = cpOverride || (cpInput ? cpInput.value.trim() : '');
+
+    if (!/^\d{5}$/.test(cpVal)) {
+        if (!cpOverride && cpVal.length > 0) {
+            showAlert('warning', 'Code postal invalide', 'Saisissez exactement 5 chiffres (ex: 75013).');
+        }
+        return;
+    }
+
+    try {
+        const data = await apiCall(API_ENDPOINTS.STATS(cpVal));
+        renderStats(data, 'home');
+    } catch (error) {
+        console.warn('API /stats inaccessible, mode DÉMO:', error.message);
+        renderStats(getMockStats(cpVal), 'home');
+    }
+}
+
+/**
+ * Raccourci pour les boutons rapides de la home
+ */
+function quickStats(cp) {
+    const cpInput = document.getElementById('stats-cp-input-home');
+    if (cpInput) cpInput.value = cp;
+    loadStatsHome(cp).catch(console.error);
+}
+
+/**
+ * Affiche les statistiques.
+ * @param {object} data  - Données de l'API
+ * @param {string} zone  - 'home' ou 'results'
+ */
+function renderStats(data, zone) {
+    const suffix = zone === 'home' ? '-home' : '';
+
+    const statsContent = document.getElementById(`stats-content${suffix}`);
     if (statsContent) statsContent.classList.remove('d-none');
 
-    const rep          = data.repartition     || {};
-    const entreprises  = rep.entreprises_pures     || 0;
-    const associations = rep.associations          || 0;
-    const fermes       = rep.etablissements_fermes || 0;
-    const total        = data.total_entites        || (entreprises + associations) || 1;
+    const rep         = data.repartition     || {};
+    const entreprises = rep.entreprises_pures     || 0;
+    const associations= rep.associations          || 0;
+    const fermes      = rep.etablissements_fermes || 0;
+    const total       = data.total_entites        || (entreprises + associations) || 1;
 
-    const pctCo  = Math.min(Math.round((entreprises  / total) * 100), 100);
-    const pctAs  = Math.min(Math.round((associations  / total) * 100), 100);
-    const pctFe  = Math.min(Math.round((fermes        / total) * 100), 100);
+    const pctCo = Math.min(Math.round((entreprises  / total) * 100), 100);
+    const pctAs = Math.min(Math.round((associations  / total) * 100), 100);
+    const pctFe = Math.min(Math.round((fermes        / total) * 100), 100);
 
-    updateStatBar('bar-companies', 'val-companies', pctCo,  entreprises);
-    updateStatBar('bar-asso',      'val-asso',      pctAs,  associations);
-    updateStatBar('bar-closed',    'val-closed',    pctFe,  fermes);
+    updateStatBar(`bar-companies${suffix}`, `val-companies${suffix}`, pctCo,  entreprises);
+    updateStatBar(`bar-asso${suffix}`,      `val-asso${suffix}`,      pctAs,  associations);
+    updateStatBar(`bar-closed${suffix}`,    `val-closed${suffix}`,    pctFe,  fermes);
 
-    // ── Top NAF ──────────────────────────────────────────────────────────
-    const topNaf    = data.top_naf || {};
-    const nafCodeEl = document.getElementById('top-naf-code');
-    const nafCountEl = document.getElementById('top-naf-count');
+    // Top NAF
+    const topNaf     = data.top_naf || {};
+    const nafCodeEl  = document.getElementById(`top-naf-code${suffix}`);
+    const nafCountEl = document.getElementById(`top-naf-count${suffix}`);
 
     if (nafCodeEl) {
-        if (topNaf.code) {
-            nafCodeEl.textContent = topNaf.libelle
-                ? `${topNaf.code} — ${topNaf.libelle}`
-                : topNaf.code;
-        } else {
-            nafCodeEl.textContent = 'Non disponible';
-        }
+        nafCodeEl.textContent = topNaf.code
+            ? (topNaf.libelle ? `${topNaf.code} — ${topNaf.libelle}` : topNaf.code)
+            : 'Non disponible';
     }
     if (nafCountEl) {
         nafCountEl.textContent = topNaf.count
@@ -692,17 +698,14 @@ function updateStatBar(barId, valId, percent, value) {
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// DONNÉES MOCK — Format exactement aligné sur le format réel de l'API
+// DONNÉES MOCK — format aligné sur l'API réelle
 // ═══════════════════════════════════════════════════════════════════════
 
-/**
- * Mock /search — utilise "address_city" (clé réelle de l'API, Exemple 4)
- */
-function getMockSearchData(query) {
+function getMockSearchData(query, dept) {
     return {
-        count: 3,
-        query: query,
-        filter_dept: null,
+        count:       3,
+        query:       query,
+        filter_dept: dept || null,
         results: [
             {
                 siret:          '77567227200020',
@@ -726,14 +729,8 @@ function getMockSearchData(query) {
     };
 }
 
-/**
- * Mock /siret/{siret} — aligné sur le format court réel de l'API (Exemples 1 & 2)
- * { siret, rna, name, status, nature, address: { number, street, postal_code, city,
- *   is_ban_validated, latitude, longitude } }
- */
 function getMockFiche(siret) {
     const fiches = {
-        // ─── Croix Rouge Française — Gold Case ──────────────────────────
         '77567227200020': {
             siret:   '77567227200020',
             rna:     'W751000060',
@@ -750,7 +747,6 @@ function getMockFiche(siret) {
                 longitude:        2.3235
             }
         },
-        // ─── DINUM — Gold Case ──────────────────────────────────────────
         '13002526500013': {
             siret:   '13002526500013',
             rna:     null,
@@ -767,7 +763,6 @@ function getMockFiche(siret) {
                 longitude:        2.308628
             }
         },
-        // ─── La Petite Boulangerie ────────────────────────────────────
         '44312012000015': {
             siret:   '44312012000015',
             rna:     null,
@@ -785,19 +780,15 @@ function getMockFiche(siret) {
             }
         }
     };
-
     return fiches[siret] || null;
 }
 
-/**
- * Mock /stats/{cp} — format réel de l'API
- */
 function getMockStats(cp) {
     const seed  = parseInt(cp.replace(/\D/g, '')) || 75000;
     const total = (seed % 1000) * 15 + 500;
     return {
-        zone:           cp,
-        total_entites:  total,
+        zone:          cp,
+        total_entites: total,
         repartition: {
             entreprises_pures:     Math.floor(total * 0.78),
             associations:          Math.floor(total * 0.12),
@@ -816,17 +807,11 @@ function getMockStats(cp) {
 // UTILITAIRES
 // ═══════════════════════════════════════════════════════════════════════
 
-/**
- * Formate un nombre en notation fr-FR (séparateur de milliers)
- */
 function formatNumber(n) {
     if (n === null || n === undefined || n === '') return '—';
     return Number(n).toLocaleString('fr-FR');
 }
 
-/**
- * Protège contre les injections HTML dans les textes injectés via innerHTML
- */
 function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -837,12 +822,8 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
-/**
- * Affiche une alerte Bootstrap flottante en haut de page (auto-dismiss 5s)
- */
 function showAlert(type, title, message) {
-    const existing = document.querySelectorAll('.alert-floating');
-    existing.forEach(a => a.remove());
+    document.querySelectorAll('.alert-floating').forEach(a => a.remove());
 
     const alert = document.createElement('div');
     alert.className = `alert alert-${type} alert-dismissible fade show alert-floating position-fixed top-0 start-50 translate-middle-x mt-3`;
@@ -857,7 +838,7 @@ function showAlert(type, title, message) {
 }
 
 /**
- * Remplit la barre de recherche de la home ET lance la recherche.
+ * Remplit la barre de recherche home ET lance la recherche.
  * Appelé par les boutons "Essayez : Croix Rouge (75)"
  */
 function fillSearchHome(query, dept) {
@@ -881,9 +862,7 @@ function initTheme() {
     applyTheme(theme);
 
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-        if (!localStorage.getItem('theme')) {
-            applyTheme(e.matches ? 'dark' : 'light');
-        }
+        if (!localStorage.getItem('theme')) applyTheme(e.matches ? 'dark' : 'light');
     });
 }
 
@@ -917,4 +896,4 @@ function updateThemeIcon(theme) {
 // FIN
 // ═══════════════════════════════════════════════════════════════════════
 
-console.log('app.js chargé — aligné format API (siret/rna/name/address/*)');
+console.log('app.js v4 — SIRET direct + stats home + dept 2 chiffres');

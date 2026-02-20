@@ -5,8 +5,6 @@
  *
  * Ce fichier contient l'URL de l'API et la logique d'appel (fetch).
  *
- * ⚠IMPORTANT : Vérifiez qu'il n'y a PAS d'apostrophe parasite à la fin de l'URL !
- *
  * ══════════════════════════════════════════════════════════════════════
  */
 

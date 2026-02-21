@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
-ETL CHALLENGE - PHASE 3: CHARGEMENT (v7 - FUSION OPTIMALE)
-Fusion v5 + v6 :
-  - Index postal_code sur sirene avant fuzzy (optimisation VM)
-  - FUZZY_BATCH=500 pour progression visible
-  - Logging Golden Case Croix Rouge
-  - top_naf_count dans stats_by_postal (pour /stats/{cp})
-  - Export SQLite FTS5 pour /search
+ETL CHALLENGE - PHASE 3: CHARGEMENT (v8 - SANS FUZZY)
+Suppression du niveau 3 (fuzzy matching) qui prenait 6h.
+Matching RNA en 2 niveaux uniquement :
+  - Niveau 1 : SIRET exact (score 1.0)
+  - Niveau 2 : SIREN exact (score 0.95)
 """
 
 import duckdb
@@ -14,7 +12,6 @@ import sqlite3
 import logging
 import pandas as pd
 from pathlib import Path
-from rapidfuzz import fuzz, process
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -25,9 +22,6 @@ DB_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH     = DB_DIR / "unified_data.duckdb"
 SQLITE_PATH = DB_DIR / "search.db"
 
-FUZZY_THRESHOLD = 90
-FUZZY_BATCH     = 500  # Progression visible toutes les 500 CP
-
 
 def load_and_join():
     logger.info("Connexion DuckDB : %s", DB_PATH)
@@ -36,7 +30,6 @@ def load_and_join():
         DB_PATH.unlink()
     con = duckdb.connect(str(DB_PATH))
 
-    # --- SÉCURITÉ RAM POUR LA VM ---
     con.execute("PRAGMA memory_limit='26GB'")
     con.execute("PRAGMA threads=8")
 
@@ -45,12 +38,6 @@ def load_and_join():
     # =========================================================================
     logger.info("Chargement SIRENE...")
     con.execute(f"CREATE TABLE sirene AS SELECT * FROM read_parquet('{PROCESSED}/sirene_clean.parquet')")
-
-    # --- INDEX VITAL POUR LA VM (évite 10 474 full scans) ---
-    logger.info("   Création de l'index SIRENE postal_code...")
-    con.execute("CREATE INDEX idx_sirene_cp_temp ON sirene(postal_code)")
-    # ---------------------------------------------------------
-
     n = con.execute("SELECT COUNT(*) FROM sirene").fetchone()[0]
     logger.info(f"   {n:,} etablissements")
 
@@ -87,7 +74,7 @@ def load_and_join():
         con.execute("CREATE TABLE unite_legale (siren VARCHAR, nom_ul VARCHAR, categorieEntreprise VARCHAR)")
 
     # =========================================================================
-    # 2. TABLE DE LIAISON siret_rna_link (matching 3 niveaux)
+    # 2. TABLE DE LIAISON siret_rna_link (2 niveaux uniquement)
     # =========================================================================
     logger.info("Construction de la table siret_rna_link...")
 
@@ -136,13 +123,7 @@ def load_and_join():
     n2 = con.execute("SELECT COUNT(*) FROM siret_rna_link").fetchone()[0] - n1
     logger.info(f"      -> {n2:,} matchs niveau 2")
 
-    # --- Niveau 3 : Blocking CP + Fuzzy name ---
-    logger.info("   Niveau 3 — Blocking CP + Fuzzy name (seuil > %d%%)...", FUZZY_THRESHOLD)
-    _fuzzy_match_by_cp(con)
-
     n_total = con.execute("SELECT COUNT(*) FROM siret_rna_link").fetchone()[0]
-    n3 = n_total - n1 - n2
-    logger.info(f"      -> {n3:,} matchs niveau 3 (fuzzy)")
     logger.info(f"   TOTAL siret_rna_link : {n_total:,} liaisons")
 
     con.execute("CREATE INDEX idx_link_siret ON siret_rna_link(siret)")
@@ -151,7 +132,7 @@ def load_and_join():
     # =========================================================================
     # 3. TABLE UNIFIEE (golden_record)
     # =========================================================================
-    logger.info("Creation table unifiee (jointures via siret_rna_link)...")
+    logger.info("Creation table unifiee...")
     con.execute("""
         CREATE TABLE unified_records AS
         SELECT
@@ -187,7 +168,6 @@ def load_and_join():
     logger.info(f"   Avec RNA      : {n_rna:,}")
     logger.info(f"   Avec GPS      : {n_gps:,}")
 
-    # Distribution des méthodes de matching
     dist = con.execute("""
         SELECT rna_match_method, COUNT(*) AS cnt
         FROM unified_records WHERE id_rna IS NOT NULL
@@ -237,7 +217,6 @@ def load_and_join():
         GROUP BY postal_code
     """)
 
-    # --- top_naf_count : nombre d'occurrences du NAF dominant (pour /stats/{cp}) ---
     con.execute("""
         CREATE TABLE naf_counts AS
         SELECT postal_code, naf, COUNT(*) AS cnt
@@ -271,137 +250,7 @@ def load_and_join():
     logger.info("=" * 60)
 
 
-def _fuzzy_match_by_cp(con: duckdb.DuckDBPyConnection):
-    """
-    Niveau 3 : Fuzzy matching RNA->SIRENE avec blocking par code postal.
-    - Blocking géographique : on ne compare que les entités du même CP
-    - WRatio (rapidfuzz) : méta-algorithme robuste aux variations de noms
-    - score_cutoff : court-circuite les calculs inutiles
-    """
-    rna_no_siret = con.execute("""
-        SELECT id_rna, titre_clean, adrs_codepostal, date_publi, nature
-        FROM rna
-        WHERE (siret IS NULL OR TRIM(siret) = '')
-          AND adrs_codepostal IS NOT NULL
-          AND titre_clean IS NOT NULL
-    """).fetchdf()
-
-    if rna_no_siret.empty:
-        logger.info("      Aucune association RNA sans SIRET a matcher")
-        return
-
-    logger.info(f"      {len(rna_no_siret):,} associations RNA sans SIRET a matcher")
-
-    already_matched_rna = set(
-        r[0] for r in con.execute("SELECT DISTINCT id_rna FROM siret_rna_link").fetchall()
-    )
-    already_matched_siret = set(
-        r[0] for r in con.execute("SELECT DISTINCT siret FROM siret_rna_link").fetchall()
-    )
-
-    rna_by_cp = rna_no_siret.groupby('adrs_codepostal')
-    cp_list   = list(rna_by_cp.groups.keys())
-    logger.info(f"      {len(cp_list):,} codes postaux a traiter")
-
-    fuzzy_matches = []
-    processed     = 0
-
-    for cp, rna_group in rna_by_cp:
-        # Requête instantanée grâce à idx_sirene_cp_temp
-        sirene_cp = con.execute("""
-            SELECT siret, COALESCE(NULLIF(name_etab, ''), NULLIF(enseigne, '')) AS name_sirene
-            FROM sirene
-            WHERE postal_code = ?
-              AND (name_etab IS NOT NULL OR enseigne IS NOT NULL)
-        """, [cp]).fetchall()
-
-        if not sirene_cp:
-            processed += 1
-            continue
-
-        sirene_cp = [(s, n) for s, n in sirene_cp if s not in already_matched_siret]
-        if not sirene_cp:
-            processed += 1
-            continue
-
-        sirene_names  = [n for _, n in sirene_cp]
-        sirene_sirets = [s for s, _ in sirene_cp]
-
-        # Filtrer les RNA déjà matchés pour ce groupe
-        rna_group_filtered = rna_group[
-            ~rna_group['id_rna'].isin(already_matched_rna) &
-            rna_group['titre_clean'].notna() &
-            (rna_group['titre_clean'] != '')
-        ]
-
-        if rna_group_filtered.empty:
-            processed += 1
-            continue
-
-        rna_names   = rna_group_filtered['titre_clean'].tolist()
-        rna_ids     = rna_group_filtered['id_rna'].tolist()
-        rna_dates   = rna_group_filtered['date_publi'].tolist()
-        rna_natures = rna_group_filtered['nature'].tolist()
-
-        # process.cdist avec score_cutoff : court-circuite les calculs sous le seuil
-        # directement en C++ → gain 3-5x vs sans score_cutoff
-        import numpy as np
-        matrix = process.cdist(rna_names, sirene_names,
-                               scorer=fuzz.WRatio,
-                               score_cutoff=FUZZY_THRESHOLD,
-                               workers=-1)
-
-        for i, row_scores in enumerate(matrix):
-            if rna_ids[i] in already_matched_rna:
-                continue
-
-            best_idx   = int(np.argmax(row_scores))
-            best_score = row_scores[best_idx]
-
-            if best_score >= FUZZY_THRESHOLD:
-                best_siret = sirene_sirets[best_idx]
-                if best_siret not in already_matched_siret:
-                    fuzzy_matches.append((
-                        best_siret,
-                        rna_ids[i],
-                        round(float(best_score) / 100.0, 4),
-                        'FUZZY_NAME_CP',
-                        rna_dates[i],
-                        rna_natures[i],
-                    ))
-                    already_matched_siret.add(best_siret)
-                    already_matched_rna.add(rna_ids[i])
-
-        # Persistance intermédiaire toutes les 2000 correspondances
-        # Évite de tout perdre en cas de crash VM
-        if len(fuzzy_matches) >= 2000:
-            df_tmp = pd.DataFrame(fuzzy_matches,
-                                  columns=['siret', 'id_rna', 'match_score',
-                                           'match_method', 'date_publi', 'nature'])
-            con.execute("INSERT INTO siret_rna_link SELECT * FROM df_tmp")
-            fuzzy_matches = []
-            logger.info(f"      [FLUSH] Matchs persistés en base")
-
-        processed += 1
-        if processed % FUZZY_BATCH == 0:
-            logger.info(f"      ... {processed:,}/{len(cp_list):,} CP traites, {len(fuzzy_matches):,} matchs fuzzy")
-
-    if fuzzy_matches:
-        df_fuzzy = pd.DataFrame(fuzzy_matches,
-                                columns=['siret', 'id_rna', 'match_score',
-                                         'match_method', 'date_publi', 'nature'])
-        con.execute("INSERT INTO siret_rna_link SELECT * FROM df_fuzzy")
-        logger.info(f"      {len(fuzzy_matches):,} matchs fuzzy inseres")
-    else:
-        logger.info("      Aucun match fuzzy trouve")
-
-
 def _build_sqlite_fts(con_duck: duckdb.DuckDBPyConnection):
-    """
-    Exporte unified_records vers SQLite FTS5.
-    - search_fts  : table virtuelle tokenisée pour la recherche plein texte
-    - search_meta : table miroir avec index B-tree pour les filtres géo (dept, cp)
-    """
     if SQLITE_PATH.exists():
         SQLITE_PATH.unlink()
 
@@ -479,6 +328,6 @@ def _build_sqlite_fts(con_duck: duckdb.DuckDBPyConnection):
 
 if __name__ == "__main__":
     logger.info("=" * 60)
-    logger.info("PHASE 3 - CHARGEMENT & JOINTURES (v7)")
+    logger.info("PHASE 3 - CHARGEMENT & JOINTURES (v8 - SANS FUZZY)")
     logger.info("=" * 60)
     load_and_join()

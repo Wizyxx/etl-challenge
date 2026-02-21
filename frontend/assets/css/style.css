@@ -1,0 +1,635 @@
+/**
+ * ══════════════════════════════════════════════════════════════════════
+ * STYLE.CSS — Frontend 5 Days Challenge
+ * Design : Clean & Professionnel avec Dark Mode
+ * ══════════════════════════════════════════════════════════════════════
+ */
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   1. VARIABLES CSS — Thème Clair (par défaut)
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme="light"] {
+    /* Couleurs principales */
+    --primary-blue:      #0d6efd;
+    --primary-dark:      #0a58ca;
+    --primary-light:     #cfe2ff;
+    --primary-lighter:   #e7f1ff;
+
+    /* Couleurs secondaires */
+    --danger-red:        #dc3545;
+    --danger-light:      #f8d7da;
+    --success-green:     #198754;
+    --success-light:     #d1e7dd;
+    --warning-yellow:    #ffc107;
+
+    /* Backgrounds & Surfaces */
+    --bg-body:           #ffffff;
+    --bg-surface:        #ffffff;
+    --bg-elevated:       #ffffff;
+    --bg-hover:          #f1f3f5;
+
+    /* Textes */
+    --text-primary:      #212529;
+    --text-secondary:    #6c757d;
+    --text-muted:        #adb5bd;
+    --text-inverse:      #ffffff;
+
+    /* Bordures */
+    --border-color:      #dee2e6;
+    --border-light:      #e9ecef;
+
+    /* Ombres */
+    --shadow-sm:         0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    --shadow-md:         0 0.5rem 1rem rgba(0, 0, 0, 0.10);
+    --shadow-lg:         0 1rem 3rem rgba(0, 0, 0, 0.175);
+    --shadow-hover:      0 0.5rem 1.5rem rgba(13, 110, 253, 0.15);
+
+    /* Spécifiques */
+    --input-bg:          #ffffff;
+    --input-border:      #ced4da;
+    --card-header-bg:    #f8f9fa;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   2. VARIABLES CSS — Thème Sombre
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] {
+    /* Couleurs principales (légèrement ajustées pour dark) */
+    --primary-blue:      #5a9afc;
+    --primary-dark:      #4a8ce8;
+    --primary-light:     #1e3a5f;
+    --primary-lighter:   #152840;
+
+    /* Couleurs secondaires */
+    --danger-red:        #ff6b7a;
+    --danger-light:      #3d1f23;
+    --success-green:     #4ec97c;
+    --success-light:     #1f3d2c;
+    --warning-yellow:    #ffd43b;
+
+    /* Backgrounds & Surfaces */
+    --bg-body:           #161b22; /* CORRECTION: Gris foncé uniforme (au lieu de noir #0d1117) */
+    --bg-surface:        #161b22; /* Identique au body pour effet "flat" */
+    --bg-elevated:       #1c2128;
+    --bg-hover:          #21262d;
+
+    /* Textes */
+    --text-primary:      #e6edf3;
+    --text-secondary:    #8b949e;
+    --text-muted:        #6e7681;
+    --text-inverse:      #0d1117;
+
+    /* Bordures */
+    --border-color:      #30363d;
+    --border-light:      #21262d;
+
+    /* Ombres (plus prononcées en dark) */
+    --shadow-sm:         0 0.125rem 0.5rem rgba(0, 0, 0, 0.3);
+    --shadow-md:         0 0.5rem 1.5rem rgba(0, 0, 0, 0.4);
+    --shadow-lg:         0 1rem 3rem rgba(0, 0, 0, 0.6);
+    --shadow-hover:      0 0.5rem 1.5rem rgba(90, 154, 252, 0.25);
+
+    /* Spécifiques */
+    --input-bg:          #0d1117;
+    --input-border:      #30363d;
+    --card-header-bg:    #161b22;
+}
+
+
+/* Transition fluide entre thèmes */
+body,
+.card,
+.bg-white,
+.bg-light,
+.form-control,
+.btn,
+.navbar,
+.badge,
+.alert,
+.list-group-item {
+    transition: background-color 0.3s ease,
+    color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   3. APPLICATION DES VARIABLES
+   ═══════════════════════════════════════════════════════════════════ */
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    background-color: var(--bg-body);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+#page-home, #page-results {
+    flex-grow: 1;
+}
+
+/* Surcharges Bootstrap pour utiliser nos variables */
+.bg-light {
+    background-color: var(--bg-body) !important;
+}
+
+.bg-white {
+    background-color: var(--bg-surface) !important;
+}
+
+/* CORRECTION : Ajout de bg-dark pour Bootstrap */
+.bg-dark {
+    background-color: var(--bg-body) !important;
+}
+
+.text-muted {
+    color: var(--text-secondary) !important;
+}
+
+.text-primary {
+    color: var(--primary-blue) !important;
+}
+
+.border {
+    border-color: var(--border-color) !important;
+}
+
+.border-bottom {
+    border-bottom-color: var(--border-color) !important;
+}
+
+.shadow-sm {
+    box-shadow: var(--shadow-sm) !important;
+}
+
+.shadow-lg {
+    box-shadow: var(--shadow-lg) !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   4. NAVBAR
+   ═══════════════════════════════════════════════════════════════════ */
+
+.navbar {
+    background-color: var(--primary-blue) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.navbar-brand {
+    color: var(--text-inverse) !important;
+    font-size: 1.1rem;
+    transition: opacity 0.15s ease;
+}
+
+.navbar-brand:hover {
+    opacity: 0.85;
+}
+
+/* Bouton toggle dark mode */
+#theme-toggle {
+    border-color: rgba(255, 255, 255, 0.3);
+    color: var(--text-inverse);
+    transition: all 0.2s ease;
+}
+
+#theme-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: rotate(20deg);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   5. CARDS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.card:hover {
+    box-shadow: var(--shadow-hover);
+}
+
+.card-header {
+    background-color: var(--card-header-bg);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.card-footer {
+    background-color: var(--card-header-bg);
+    border-top: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   6. FORMULAIRES
+   ═══════════════════════════════════════════════════════════════════ */
+
+.form-control {
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text-primary);
+}
+
+.form-control:focus {
+    background-color: var(--input-bg);
+    border-color: var(--primary-blue);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+}
+
+.form-control::placeholder {
+    color: var(--text-muted);
+}
+
+.input-group-text {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-secondary);
+}
+
+/* Fix pour input-group en dark mode */
+.input-group > .form-control:not(:first-child) {
+    border-left-color: var(--border-color);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   7. BOUTONS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.btn {
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+.btn-primary {
+    background-color: var(--primary-blue);
+    border-color: var(--primary-blue);
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-dark);
+    border-color: var(--primary-dark);
+}
+
+.btn-outline-secondary {
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+    background-color: transparent;
+}
+
+.btn-outline-secondary:hover {
+    background-color: var(--primary-blue);
+    border-color: var(--primary-blue);
+    color: white;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   8. PAGE HOME
+   ═══════════════════════════════════════════════════════════════════ */
+
+#page-home {
+    animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+#page-home h1 {
+    color: var(--text-primary);
+}
+
+#page-home .lead {
+    color: var(--text-secondary);
+}
+
+/* Badge "Base de données" */
+#page-home .badge {
+    background-color: var(--primary-lighter) !important;
+    color: var(--primary-blue) !important;
+    border: 1px solid var(--primary-light);
+}
+
+/* Stats */
+#page-home .display-6 {
+    color: var(--primary-blue);
+    font-weight: 700;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   9. LISTE RÉSULTATS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.list-group-item {
+    background-color: var(--bg-surface);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+.result-item {
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-left: 3px solid transparent;
+}
+
+.result-item:hover {
+    background-color: var(--bg-hover);
+    border-left-color: var(--primary-blue);
+    transform: translateX(3px);
+}
+
+.result-item.active {
+    background-color: var(--primary-lighter);
+    border-left-color: var(--primary-blue);
+}
+
+.result-item h6 {
+    color: var(--text-primary);
+}
+
+.result-item small {
+    color: var(--text-secondary);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   10. FICHE DÉTAILLÉE
+   ═══════════════════════════════════════════════════════════════════ */
+
+#detail-card {
+    animation: slideInRight 0.4s ease;
+}
+
+@keyframes slideInRight {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Header avec gradient (reste inchangé car déjà coloré) */
+.bg-gradient-primary {
+    background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-dark) 100%);
+}
+
+#detail-title {
+    color: white;
+}
+
+/* Bloc RNA */
+#detail-rna-block {
+    background-color: var(--danger-light);
+    border-left: 4px solid var(--danger-red);
+    color: var(--text-primary);
+}
+
+#detail-rna-id {
+    color: var(--danger-red);
+    font-family: monospace;
+}
+
+/* Sections */
+.card-body h6 {
+    color: var(--text-secondary);
+    border-bottom-color: var(--border-color);
+}
+
+.card-body small {
+    color: var(--text-muted);
+}
+
+.font-monospace {
+    font-family: 'SF Mono', Monaco, monospace;
+    color: var(--text-primary);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   11. CARTE LEAFLET
+   ═══════════════════════════════════════════════════════════════════ */
+
+#map {
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--bg-hover);
+}
+
+#map-coords {
+    background-color: var(--card-header-bg);
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
+}
+
+/* Dark mode pour Leaflet */
+[data-theme="dark"] .leaflet-layer,
+[data-theme="dark"] .leaflet-control-zoom-in,
+[data-theme="dark"] .leaflet-control-zoom-out,
+[data-theme="dark"] .leaflet-control-attribution {
+    filter: brightness(0.8) invert(1) hue-rotate(180deg);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   12. WIDGET STATS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.progress {
+    background-color: var(--bg-hover);
+    border-radius: 0.25rem;
+}
+
+.progress-bar {
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    font-weight: 600;
+}
+
+#stats-content .alert-primary {
+    background-color: var(--primary-lighter);
+    border-left: 4px solid var(--primary-blue);
+    color: var(--text-primary);
+}
+
+#top-naf-code {
+    color: var(--primary-blue);
+    font-family: monospace;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   13. BADGES
+   ═══════════════════════════════════════════════════════════════════ */
+
+.badge {
+    font-weight: 600;
+}
+
+.badge.bg-danger {
+    background-color: var(--danger-red) !important;
+    color: white !important;
+}
+
+.badge.bg-success {
+    background-color: var(--success-green) !important;
+    color: white !important;
+}
+
+.badge.bg-secondary {
+    background-color: var(--text-secondary) !important;
+    color: white !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   14. ALERTS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.alert {
+    background-color: var(--bg-elevated);
+    border-left: 4px solid;
+    color: var(--text-primary);
+}
+
+.alert-warning {
+    border-left-color: var(--warning-yellow);
+    background-color: rgba(255, 193, 7, 0.1);
+}
+
+.alert-danger {
+    border-left-color: var(--danger-red);
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+.alert-success {
+    border-left-color: var(--success-green);
+    background-color: rgba(25, 135, 84, 0.1);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   15. FOOTER
+   ═══════════════════════════════════════════════════════════════════ */
+
+footer {
+    background-color: var(--bg-surface);
+    border-top: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    margin-top: auto !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   16. UTILITAIRES
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Icônes colorées */
+.fa-building { color: var(--primary-blue); }
+.fa-landmark { color: var(--danger-red); }
+.fa-location-dot { color: var(--primary-blue); }
+.fa-circle-check { color: var(--success-green); }
+.fa-circle-xmark { color: var(--text-muted); }
+
+/* Scrollbar custom */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-hover);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--text-muted);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   17. RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 992px) {
+    #page-home h1 {
+        font-size: 2rem;
+    }
+
+    .input-group {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 768px) {
+    .navbar-brand {
+        font-size: 0.95rem;
+    }
+
+    #page-home h1 {
+        font-size: 1.75rem;
+    }
+
+    #map {
+        height: 220px !important;
+    }
+}
+
+@media (max-width: 576px) {
+    .card-body {
+        padding: 0.75rem;
+    }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   18. ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes slideInLeft {
+    from { opacity: 0; transform: translateX(-15px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+.result-item {
+    animation: slideInLeft 0.3s ease;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+#stats-widget {
+    animation: slideUp 0.4s ease 0.2s both;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FIN
+   ═══════════════════════════════════════════════════════════════════ */

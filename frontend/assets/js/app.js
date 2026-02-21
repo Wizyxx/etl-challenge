@@ -5,39 +5,7 @@
  * APP.JS — Logique Principale du Frontend
  * 5 Days Challenge — Référentiel Unifié SIRENE × RNA × BAN
  * ══════════════════════════════════════════════════════════════════════
- *
- * FORMAT API RÉEL (backend FastAPI) :
- *
- * GET /ping → { "status": "ok" }
- *
- * GET /siret/{siret} → {
- *   siret, rna, name, status, nature,
- *   address: { number, street, postal_code, city,
- *              is_ban_validated, latitude, longitude }
- * }
- *
- * GET /search?q=...&dept=... → {
- *   query, filter_dept, count,
- *   results: [{ siret, name, address_city, is_association }]
- * }
- *
- * GET /stats/{cp} → {
- *   zone, total_entites,
- *   repartition: { entreprises_pures, associations, etablissements_fermes },
- *   top_naf: { code, libelle, count }
- * }
- *
- * Erreurs standardisées :
- *   404 → { "error": "SIRET_NOT_FOUND", "message": "..." }
- *   400 → { "error": "INVALID_FORMAT",  "message": "..." }
- *
- * ══════════════════════════════════════════════════════════════════════
  */
-
-
-// ═══════════════════════════════════════════════════════════════════════
-// VARIABLES GLOBALES
-// ═══════════════════════════════════════════════════════════════════════
 
 let leafletMap    = null;
 let leafletMarker = null;
@@ -49,7 +17,7 @@ let currentResults = [];
 // ═══════════════════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('App démarrée — Référentiel Unifié v4');
+    console.log('App démarrée — Référentiel Unifié v5 (Production)');
     initTheme();
     checkBackendHealth().catch(err => console.error('Healthcheck échoué:', err));
     setupEventListeners();
@@ -84,7 +52,6 @@ async function checkBackendHealth() {
 // ═══════════════════════════════════════════════════════════════════════
 
 function setupEventListeners() {
-
     // ── Page Home — recherche ──
     const btnHome   = document.getElementById('btn-search-home');
     const inputHome = document.getElementById('search-input-home');
@@ -241,9 +208,6 @@ function resetMap() {
 
 // ═══════════════════════════════════════════════════════════════════════
 // RECHERCHE PRINCIPALE
-// Règle :
-//   - 14 chiffres → GET /siret/{siret} directement
-//   - sinon       → GET /search?q=...&dept=...
 // ═══════════════════════════════════════════════════════════════════════
 
 async function handleSearch(query, dept) {
@@ -258,12 +222,10 @@ async function handleSearch(query, dept) {
     // ── CAS 1 : SIRET exact (14 chiffres) → fiche directe ──────────────
     if (/^\d{14}$/.test(q)) {
         showResults();
-        // Pré-remplir la barre de re-recherche
         const ir = document.getElementById('search-input-results');
         const dr = document.getElementById('dept-input-results');
         if (ir) ir.value = q;
         if (dr) dr.value = d;
-        // Vider la liste, afficher la fiche directement
         resetResultsState();
         document.getElementById('detail-placeholder').classList.add('d-none');
         document.getElementById('detail-card').classList.remove('d-none');
@@ -286,7 +248,6 @@ async function handleSearch(query, dept) {
     loader.classList.remove('d-none');
     resultsList.innerHTML = '';
 
-    // Pré-remplir barre re-recherche
     const ir = document.getElementById('search-input-results');
     const dr = document.getElementById('dept-input-results');
     if (ir) ir.value = q;
@@ -297,7 +258,6 @@ async function handleSearch(query, dept) {
     document.getElementById('stats-widget').classList.add('d-none');
 
     try {
-        // Si l'utilisateur entre 5 chiffres dans le champ dept → on extrait les 2 premiers
         const params = new URLSearchParams({ q });
         if (d) {
             const deptVal = d.length === 5 ? d.substring(0, 2) : d;
@@ -309,19 +269,22 @@ async function handleSearch(query, dept) {
         renderResults(data);
 
     } catch (error) {
-        console.warn('API /search inaccessible, mode DÉMO:', error.message);
-        await new Promise(r => setTimeout(r, 300));
-        const mockData = getMockSearchData(q, d);
-        currentResults = mockData.results;
-        renderResults(mockData);
-        showAlert('info', 'Mode Démonstration', 'API hors ligne — données de test affichées.');
+        console.error('Erreur lors de la recherche:', error);
+        loader.classList.add('d-none');
+        resultsList.innerHTML = `
+            <div class="list-group-item text-center text-danger py-5">
+                <i class="fa-solid fa-triangle-exclamation fa-3x mb-3 opacity-75"></i><br>
+                <strong>Erreur de recherche</strong><br>
+                <small>${escapeHtml(error.message)}</small>
+            </div>
+        `;
+        showAlert('danger', 'Erreur API', error.message);
     }
 }
 
 
 // ═══════════════════════════════════════════════════════════════════════
 // RENDU LISTE RÉSULTATS
-// Chaque item : { siret, name, address_city, is_association }
 // ═══════════════════════════════════════════════════════════════════════
 
 function renderResults(data) {
@@ -406,21 +369,14 @@ async function loadDetailedFiche(siret) {
     document.getElementById('detail-placeholder').classList.add('d-none');
     document.getElementById('detail-title').textContent = 'Chargement…';
 
-    let data;
     try {
-        data = await apiCall(API_ENDPOINTS.SIRET(siret));
+        const data = await apiCall(API_ENDPOINTS.SIRET(siret));
+        renderDetailedFiche(data);
     } catch (error) {
-        console.warn('API /siret inaccessible:', error.message);
-        data = getMockFiche(siret);
-        if (!data) {
-            document.getElementById('detail-title').textContent = 'Établissement introuvable';
-            showAlert('danger', 'Erreur 404', `Aucune fiche trouvée pour le SIRET ${siret}.`);
-            return;
-        }
-        showAlert('info', 'Mode Démo', 'API hors ligne — données de démonstration.');
+        console.error('Erreur lors de la récupération du SIRET:', error);
+        document.getElementById('detail-title').textContent = 'Établissement introuvable';
+        showAlert('danger', 'Erreur API', error.message);
     }
-
-    if (data) renderDetailedFiche(data);
 }
 
 function renderDetailedFiche(data) {
@@ -430,7 +386,6 @@ function renderDetailedFiche(data) {
     document.getElementById('detail-title').textContent = data.name || '—';
     document.getElementById('detail-enseigne').textContent = '';
 
-    // Badge statut
     const statusBadge = document.getElementById('detail-status-badge');
     if (data.status === 'open') {
         statusBadge.textContent = 'ACTIF';
@@ -443,7 +398,6 @@ function renderDetailedFiche(data) {
         statusBadge.className   = 'badge bg-white text-warning';
     }
 
-    // ── Badge ASSOCIATION ────────────────────────────────────────────────
     const assoBadge = document.getElementById('detail-asso-badge');
     if (data.rna) {
         assoBadge.classList.remove('d-none');
@@ -451,7 +405,7 @@ function renderDetailedFiche(data) {
         assoBadge.classList.add('d-none');
     }
 
-    // ── Bloc RNA — PREUVE 1 ──────────────────────────────────────────────
+    // ── Bloc RNA ─────────────────────────────────────────────────────────
     const rnaBlock = document.getElementById('detail-rna-block');
     if (data.rna) {
         rnaBlock.classList.remove('d-none');
@@ -479,7 +433,7 @@ function renderDetailedFiche(data) {
 
     document.getElementById('detail-enseigne-full').textContent = data.enseigne || '—';
 
-    // ── Localisation — PREUVE BAN ─────────────────────────────────────────
+    // ── Localisation ──────────────────────────────────────────────────────
     document.getElementById('detail-address').textContent = [address.number, address.street].filter(Boolean).join(' ') || '—';
     document.getElementById('detail-postal').textContent  = address.postal_code || '—';
     document.getElementById('detail-city').textContent    = address.city        || '—';
@@ -491,7 +445,7 @@ function renderDetailedFiche(data) {
         banEl.innerHTML = '<span class="text-muted"><i class="fa-solid fa-circle-xmark me-1"></i>Non validé</span>';
     }
 
-    // ── Carte Leaflet — PREUVE 2 ───────────────────────────────────────────
+    // ── Carte Leaflet ──────────────────────────────────────────────────────
     if (address.latitude && address.longitude) {
         updateMap(address.latitude, address.longitude, data.name || 'Établissement');
     } else {
@@ -503,7 +457,7 @@ function renderDetailedFiche(data) {
         }
     }
 
-    // ── Widget Stats (pré-rempli avec le CP de la fiche) ─────────────────
+    // ── Widget Stats ───────────────────────────────────────────────────────
     if (address.postal_code) {
         const cpInput = document.getElementById('stats-cp-input');
         if (cpInput) cpInput.value = address.postal_code;
@@ -582,24 +536,13 @@ function updateMap(lat, lon, label) {
 
 // ═══════════════════════════════════════════════════════════════════════
 // STATISTIQUES — GET /stats/{cp}
-// Réponse : { zone, total_entites,
-//             repartition: { entreprises_pures, associations, etablissements_fermes },
-//             top_naf: { code, libelle, count } }
 // ═══════════════════════════════════════════════════════════════════════
 
-/**
- * Stats sur la page RÉSULTATS (widget sous la fiche)
- */
 async function loadStats(cpOverride) {
     const cpInput = document.getElementById('stats-cp-input');
     const cpVal   = cpOverride || (cpInput ? cpInput.value.trim() : '');
 
-    if (!/^\d{5}$/.test(cpVal)) {
-        if (!cpOverride && cpVal.length > 0) {
-            showAlert('warning', 'Code postal invalide', 'Saisissez exactement 5 chiffres (ex: 75014).');
-        }
-        return;
-    }
+    if (!/^\d{5}$/.test(cpVal)) return;
 
     document.getElementById('stats-widget').classList.remove('d-none');
 
@@ -607,48 +550,31 @@ async function loadStats(cpOverride) {
         const data = await apiCall(API_ENDPOINTS.STATS(cpVal));
         renderStats(data, 'results');
     } catch (error) {
-        console.warn('API /stats inaccessible, mode DÉMO:', error.message);
-        renderStats(getMockStats(cpVal), 'results');
+        console.error('Erreur API /stats :', error);
+        document.getElementById('stats-widget').classList.add('d-none');
     }
 }
 
-/**
- * Stats sur la page HOME (widget toujours visible)
- */
 async function loadStatsHome(cpOverride) {
     const cpInput = document.getElementById('stats-cp-input-home');
     const cpVal   = cpOverride || (cpInput ? cpInput.value.trim() : '');
 
-    if (!/^\d{5}$/.test(cpVal)) {
-        if (!cpOverride && cpVal.length > 0) {
-            showAlert('warning', 'Code postal invalide', 'Saisissez exactement 5 chiffres (ex: 75013).');
-        }
-        return;
-    }
+    if (!/^\d{5}$/.test(cpVal)) return;
 
     try {
         const data = await apiCall(API_ENDPOINTS.STATS(cpVal));
         renderStats(data, 'home');
     } catch (error) {
-        console.warn('API /stats inaccessible, mode DÉMO:', error.message);
-        renderStats(getMockStats(cpVal), 'home');
+        console.error('Erreur API /stats home :', error);
     }
 }
 
-/**
- * Raccourci pour les boutons rapides de la home
- */
 function quickStats(cp) {
     const cpInput = document.getElementById('stats-cp-input-home');
     if (cpInput) cpInput.value = cp;
     loadStatsHome(cp).catch(console.error);
 }
 
-/**
- * Affiche les statistiques.
- * @param {object} data  - Données de l'API
- * @param {string} zone  - 'home' ou 'results'
- */
 function renderStats(data, zone) {
     const suffix = zone === 'home' ? '-home' : '';
 
@@ -669,7 +595,6 @@ function renderStats(data, zone) {
     updateStatBar(`bar-asso${suffix}`,      `val-asso${suffix}`,      pctAs,  associations);
     updateStatBar(`bar-closed${suffix}`,    `val-closed${suffix}`,    pctFe,  fermes);
 
-    // Top NAF
     const topNaf     = data.top_naf || {};
     const nafCodeEl  = document.getElementById(`top-naf-code${suffix}`);
     const nafCountEl = document.getElementById(`top-naf-count${suffix}`);
@@ -694,112 +619,6 @@ function updateStatBar(barId, valId, percent, value) {
         bar.setAttribute('aria-valuenow', String(percent));
     }
     if (val) val.textContent = formatNumber(value);
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════
-// DONNÉES MOCK — format aligné sur l'API réelle
-// ═══════════════════════════════════════════════════════════════════════
-
-function getMockSearchData(query, dept) {
-    return {
-        count:       3,
-        query:       query,
-        filter_dept: dept || null,
-        results: [
-            {
-                siret:          '77567227200020',
-                name:           'CROIX ROUGE FRANCAISE',
-                address_city:   'PARIS',
-                is_association: true
-            },
-            {
-                siret:          '44312012000015',
-                name:           'LA PETITE BOULANGERIE',
-                address_city:   'LYON',
-                is_association: false
-            },
-            {
-                siret:          '13002526500013',
-                name:           'DIRECTION INTERMINISTERIELLE DU NUMERIQUE',
-                address_city:   'PARIS',
-                is_association: false
-            }
-        ]
-    };
-}
-
-function getMockFiche(siret) {
-    const fiches = {
-        '77567227200020': {
-            siret:   '77567227200020',
-            rna:     'W751000060',
-            name:    'CROIX ROUGE FRANCAISE',
-            status:  'open',
-            nature:  'ASSOCIATION',
-            address: {
-                number:           '98',
-                street:           'RUE DIDOT',
-                postal_code:      '75014',
-                city:             'PARIS',
-                is_ban_validated: true,
-                latitude:         48.8296,
-                longitude:        2.3235
-            }
-        },
-        '13002526500013': {
-            siret:   '13002526500013',
-            rna:     null,
-            name:    'DIRECTION INTERMINISTERIELLE DU NUMERIQUE',
-            status:  'open',
-            nature:  null,
-            address: {
-                number:           '20',
-                street:           'AV DE SEGUR',
-                postal_code:      '75007',
-                city:             'PARIS',
-                is_ban_validated: true,
-                latitude:         48.850699,
-                longitude:        2.308628
-            }
-        },
-        '44312012000015': {
-            siret:   '44312012000015',
-            rna:     null,
-            name:    'LA PETITE BOULANGERIE',
-            status:  'open',
-            nature:  null,
-            address: {
-                number:           '12',
-                street:           'RUE DE LA REPUBLIQUE',
-                postal_code:      '69002',
-                city:             'LYON',
-                is_ban_validated: true,
-                latitude:         45.7640,
-                longitude:        4.8357
-            }
-        }
-    };
-    return fiches[siret] || null;
-}
-
-function getMockStats(cp) {
-    const seed  = parseInt(cp.replace(/\D/g, '')) || 75000;
-    const total = (seed % 1000) * 15 + 500;
-    return {
-        zone:          cp,
-        total_entites: total,
-        repartition: {
-            entreprises_pures:     Math.floor(total * 0.78),
-            associations:          Math.floor(total * 0.12),
-            etablissements_fermes: Math.floor(total * 0.22)
-        },
-        top_naf: {
-            code:    '56.10A',
-            libelle: null,
-            count:   Math.floor(total * 0.08)
-        }
-    };
 }
 
 
@@ -837,10 +656,6 @@ function showAlert(type, title, message) {
     setTimeout(() => { if (alert.parentNode) alert.remove(); }, 5000);
 }
 
-/**
- * Remplit la barre de recherche home ET lance la recherche.
- * Appelé par les boutons "Essayez : Croix Rouge (75)"
- */
 function fillSearchHome(query, dept) {
     const inputHome = document.getElementById('search-input-home');
     const deptHome  = document.getElementById('dept-input-home');
@@ -891,9 +706,4 @@ function updateThemeIcon(theme) {
     icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
 }
 
-
-// ═══════════════════════════════════════════════════════════════════════
-// FIN
-// ═══════════════════════════════════════════════════════════════════════
-
-console.log('app.js v4 — SIRET direct + stats home + dept 2 chiffres');
+console.log('app.js v5 — 100% Production sans fausses données');

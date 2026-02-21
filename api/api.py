@@ -110,7 +110,8 @@ class StripTechnicalHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         for h in HEADERS_TO_REMOVE:
-            response.headers.pop(h, None)
+            if h in response.headers:
+                del response.headers[h]
         return response
 
 app.add_middleware(StripTechnicalHeadersMiddleware)

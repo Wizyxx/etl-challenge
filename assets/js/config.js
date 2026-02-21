@@ -9,10 +9,14 @@
  */
 
 // ─────────────────────────────────────────────────────────────────────
-// URL DE BASE DE L'API (Backend Ngrok)
+// URL DE BASE DE L'API
 // ─────────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = "https://jacqualine-sporogonial-iesha.ngrok-free.dev/api/v1";
+// URL DEV
+//const API_BASE_URL = "https://jacqualine-sporogonial-iesha.ngrok-free.dev/api/v1";
+
+// URL PROD
+const API_BASE_URL = "http://34.163.187.56:8000/api/v1";
 
 // ─────────────────────────────────────────────────────────────────────
 // ENDPOINTS DISPONIBLES

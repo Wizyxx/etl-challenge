@@ -187,6 +187,8 @@ def get_siret(siret: str):
             id_rna,
             status,
             asso_nature,
+            categorie_entreprise,
+            enseigne,
             addr_num,
             addr_type,
             addr_street,
@@ -208,9 +210,8 @@ def get_siret(siret: str):
         })
 
     (
-        siret_, name, id_rna, status, nature,
-        addr_num, addr_type, addr_street,
-        postal_code, city,
+        siret_, name, id_rna, status, nature, categorie_entreprise, enseigne,
+        addr_num, addr_type, addr_street, postal_code, city,
         is_ban, lat, lon
     ) = row
 
@@ -220,10 +221,11 @@ def get_siret(siret: str):
 
     return {
         "siret":  siret_,
-        "rna":    id_rna,           # null si pas association
         "name":   name,
         "status": status,
         "nature": nature,           # "ASSOCIATION" ou null
+        "category": categorie_entreprise,  # Ajout de la catégorie
+        "brand": enseigne,  # Ajout de l'enseigne
         "address": {
             "number":           addr_num or None,
             "street":           street,

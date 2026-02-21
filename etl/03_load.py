@@ -14,7 +14,7 @@ import sqlite3
 import logging
 import pandas as pd
 from pathlib import Path
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, process
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def load_and_join():
     con = duckdb.connect(str(DB_PATH))
 
     # --- SÉCURITÉ RAM POUR LA VM ---
-    con.execute("PRAGMA memory_limit='27GB'")
+    con.execute("PRAGMA memory_limit='26GB'")
     con.execute("PRAGMA threads=8")
 
     # =========================================================================
@@ -312,7 +312,7 @@ def _fuzzy_match_by_cp(con: duckdb.DuckDBPyConnection):
             SELECT siret, COALESCE(NULLIF(name_etab, ''), NULLIF(enseigne, '')) AS name_sirene
             FROM sirene
             WHERE postal_code = ?
-              AND COALESCE(NULLIF(name_etab, ''), NULLIF(enseigne, '')) IS NOT NULL
+              AND (name_etab IS NOT NULL OR enseigne IS NOT NULL)
         """, [cp]).fetchall()
 
         if not sirene_cp:
@@ -327,30 +327,60 @@ def _fuzzy_match_by_cp(con: duckdb.DuckDBPyConnection):
         sirene_names  = [n for _, n in sirene_cp]
         sirene_sirets = [s for s, _ in sirene_cp]
 
-        for _, row in rna_group.iterrows():
-            if row['id_rna'] in already_matched_rna or not row['titre_clean']:
+        # Filtrer les RNA déjà matchés pour ce groupe
+        rna_group_filtered = rna_group[
+            ~rna_group['id_rna'].isin(already_matched_rna) &
+            rna_group['titre_clean'].notna() &
+            (rna_group['titre_clean'] != '')
+        ]
+
+        if rna_group_filtered.empty:
+            processed += 1
+            continue
+
+        rna_names   = rna_group_filtered['titre_clean'].tolist()
+        rna_ids     = rna_group_filtered['id_rna'].tolist()
+        rna_dates   = rna_group_filtered['date_publi'].tolist()
+        rna_natures = rna_group_filtered['nature'].tolist()
+
+        # process.cdist avec score_cutoff : court-circuite les calculs sous le seuil
+        # directement en C++ → gain 3-5x vs sans score_cutoff
+        import numpy as np
+        matrix = process.cdist(rna_names, sirene_names,
+                               scorer=fuzz.WRatio,
+                               score_cutoff=FUZZY_THRESHOLD,
+                               workers=-1)
+
+        for i, row_scores in enumerate(matrix):
+            if rna_ids[i] in already_matched_rna:
                 continue
 
-            best_score = 0
-            best_siret = None
+            best_idx   = int(np.argmax(row_scores))
+            best_score = row_scores[best_idx]
 
-            for i, sirene_name in enumerate(sirene_names):
-                score = fuzz.WRatio(row['titre_clean'], sirene_name, score_cutoff=FUZZY_THRESHOLD)
-                if score > best_score:
-                    best_score = score
-                    best_siret = sirene_sirets[i]
+            if best_score >= FUZZY_THRESHOLD:
+                best_siret = sirene_sirets[best_idx]
+                if best_siret not in already_matched_siret:
+                    fuzzy_matches.append((
+                        best_siret,
+                        rna_ids[i],
+                        round(float(best_score) / 100.0, 4),
+                        'FUZZY_NAME_CP',
+                        rna_dates[i],
+                        rna_natures[i],
+                    ))
+                    already_matched_siret.add(best_siret)
+                    already_matched_rna.add(rna_ids[i])
 
-            if best_siret and best_score >= FUZZY_THRESHOLD:
-                fuzzy_matches.append((
-                    best_siret,
-                    row['id_rna'],
-                    round(best_score / 100.0, 4),
-                    'FUZZY_NAME_CP',
-                    row['date_publi'],
-                    row['nature'],
-                ))
-                already_matched_siret.add(best_siret)
-                already_matched_rna.add(row['id_rna'])
+        # Persistance intermédiaire toutes les 2000 correspondances
+        # Évite de tout perdre en cas de crash VM
+        if len(fuzzy_matches) >= 2000:
+            df_tmp = pd.DataFrame(fuzzy_matches,
+                                  columns=['siret', 'id_rna', 'match_score',
+                                           'match_method', 'date_publi', 'nature'])
+            con.execute("INSERT INTO siret_rna_link SELECT * FROM df_tmp")
+            fuzzy_matches = []
+            logger.info(f"      [FLUSH] Matchs persistés en base")
 
         processed += 1
         if processed % FUZZY_BATCH == 0:

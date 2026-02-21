@@ -1,4 +1,3 @@
-from fastapi.middleware.cors import CORSMiddleware  # Utilisé pour le middleware CORS
 #!/usr/bin/env python3
 """
 ETL CHALLENGE - API FastAPI (v3)
@@ -12,6 +11,8 @@ Conforme au demande du sujet :
 """
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from typing import Optional
 import duckdb
@@ -19,13 +20,13 @@ import sqlite3
 import threading
 import logging
 import os
-from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
 DB_PATH     = os.environ.get("DB_PATH",     "duckdb/unified_data.duckdb")
 SQLITE_PATH = os.environ.get("SQLITE_PATH", "duckdb/search.db")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # POOLS DE CONNEXIONS
@@ -86,7 +87,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CONFIGURATION CORS (Pour le Frontend et Ngrok)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SÉCURITÉ : CORS & suppression des headers techniques
+# ─────────────────────────────────────────────────────────────────────────────
+
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+# On ajoute le middleware CORS au cas où, pour éviter tout problème résiduel
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -95,14 +105,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SÉCURITÉ : suppression des headers techniques
-# ─────────────────────────────────────────────────────────────────────────────
-
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-
 HEADERS_TO_REMOVE = {"server", "x-powered-by", "x-aspnet-version", "x-runtime", "x-version"}
 
 class StripTechnicalHeadersMiddleware(BaseHTTPMiddleware):
@@ -110,8 +112,7 @@ class StripTechnicalHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         for h in HEADERS_TO_REMOVE:
-            if h in response.headers:
-                del response.headers[h]
+            response.headers.pop(h, None)
         return response
 
 app.add_middleware(StripTechnicalHeadersMiddleware)
@@ -150,29 +151,6 @@ def ping():
 
 # ─────────────────────────────────────────────────────────────────────────────
 # B. GOLDEN RECORD — GET /api/v1/siret/{siret}
-#
-# Format de réponse :
-# {
-#   "siret": "...",
-#   "rna": "W751000060" | null,
-#   "name": "...",
-#   "status": "open" | "closed",
-#   "nature": "ASSOCIATION" | null,
-#   "address": {
-#     "number": "98",
-#     "street": "RUE DIDOT",
-#     "postal_code": "75014",
-#     "city": "PARIS",
-#     "is_ban_validated": true,
-#     "latitude": 48.8296,
-#     "longitude": 2.3235
-#   }
-# }
-#
-# Erreurs :
-#   400 : {"error": "INVALID_FORMAT", "message": "..."}
-#   404 : {"error": "Siret not found", "input": "<siret>"}
-#         ↑ Format EXACT du sujet (pas SIRET_NOT_FOUND)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/siret/{siret}")
@@ -181,24 +159,24 @@ def get_siret(siret: str):
 
     con = duck_pool.get()
     row = con.execute("""
-        SELECT
-            siret,
-            name,
-            id_rna,
-            status,
-            asso_nature,
-            addr_num,
-            addr_type,
-            addr_street,
-            postal_code,
-            city,
-            is_ban_validated,
-            latitude,
-            longitude
-        FROM unified_records
-        WHERE siret = ?
-        LIMIT 1
-    """, [siret]).fetchone()
+                      SELECT
+                          siret,
+                          name,
+                          id_rna,
+                          status,
+                          asso_nature,
+                          addr_num,
+                          addr_type,
+                          addr_street,
+                          postal_code,
+                          city,
+                          is_ban_validated,
+                          latitude,
+                          longitude
+                      FROM unified_records
+                      WHERE siret = ?
+                          LIMIT 1
+                      """, [siret]).fetchone()
 
     # 404 — format EXACT du sujet (exemple 3)
     if not row:
@@ -238,33 +216,13 @@ def get_siret(siret: str):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # C. RECHERCHE FULL-TEXT — GET /api/v1/search
-#
-# Paramètres acceptés :
-#   q           : terme de recherche (obligatoire)
-#   dept        : code département 2 chiffres (ex: "69")
-#   postal_code : code postal 5 chiffres (ex: "69001")
-#
-# Format de réponse :
-# {
-#   "query": "boulangerie",
-#   "filter_dept": "69",
-#   "count": 2,
-#   "results": [
-#     {
-#       "siret": "...",
-#       "name": "...",
-#       "address_city": "LYON",     ← "address_city" et non "city"
-#       "is_association": true
-#     }
-#   ]
-# }
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/search")
 def search(
-    q:           str           = Query(..., description="Terme de recherche"),
-    dept:        Optional[str] = Query(None, description="Code département (ex: 69)"),
-    postal_code: Optional[str] = Query(None, description="Code postal exact (ex: 69001)"),
+        q:           str           = Query(..., description="Terme de recherche"),
+        dept:        Optional[str] = Query(None, description="Code département (ex: 69)"),
+        postal_code: Optional[str] = Query(None, description="Code postal exact (ex: 69001)"),
 ):
     q_clean = q.strip()
     if not q_clean:
@@ -342,14 +300,6 @@ def _search_fallback(conn, q, dept, postal_code):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # D. STATS FORMAT  — GET /api/v1/stats/distribution/{code_postal}
-#
-# Format de réponse :
-# {
-#   "postal_code": "75013",
-#   "total_active_companies": 14502,
-#   "total_associations": 3200,
-#   "top_activity": "6201Z"
-# }
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/stats/distribution/{code_postal}")
@@ -358,14 +308,14 @@ def get_stats_distribution(code_postal: str):
 
     con = duck_pool.get()
     row = con.execute("""
-        SELECT
-            total_entites,
-            total_associations,
-            top_naf_code
-        FROM stats_by_postal
-        WHERE postal_code = ?
-        LIMIT 1
-    """, [code_postal]).fetchone()
+                      SELECT
+                          total_entites,
+                          total_associations,
+                          top_naf_code
+                      FROM stats_by_postal
+                      WHERE postal_code = ?
+                          LIMIT 1
+                      """, [code_postal]).fetchone()
 
     if not row or row[0] == 0:
         raise HTTPException(status_code=404, detail={
@@ -385,25 +335,6 @@ def get_stats_distribution(code_postal: str):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # E. STATS FORMAT — GET /api/v1/stats/{code_postal}
-#
-# Format de réponse :
-# {
-#   "zone": "33000",
-#   "total_entites": 15420,
-#   "repartition": {
-#     "entreprises_pures": 14200,
-#     "associations": 1220,
-#     "etablissements_fermes": 3400
-#   },
-#   "top_naf": {
-#     "code": "56.10A",
-#     "libelle": null,
-#     "count": 850
-#   }
-# }
-#
-# IMPORTANT : cette route doit être déclarée APRÈS /stats/distribution/{cp}
-# sinon FastAPI intercepterait "distribution" comme un code_postal.
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/stats/{code_postal}")
@@ -412,17 +343,17 @@ def get_stats(code_postal: str):
 
     con = duck_pool.get()
     row = con.execute("""
-        SELECT
-            total_entites,
-            total_associations,
-            entreprises_pures,
-            etablissements_fermes,
-            top_naf_code,
-            top_naf_count
-        FROM stats_by_postal
-        WHERE postal_code = ?
-        LIMIT 1
-    """, [code_postal]).fetchone()
+                      SELECT
+                          total_entites,
+                          total_associations,
+                          entreprises_pures,
+                          etablissements_fermes,
+                          top_naf_code,
+                          top_naf_count
+                      FROM stats_by_postal
+                      WHERE postal_code = ?
+                          LIMIT 1
+                      """, [code_postal]).fetchone()
 
     if not row or row[0] == 0:
         raise HTTPException(status_code=404, detail={
@@ -447,6 +378,21 @@ def get_stats(code_postal: str):
         },
     }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVIR L'INTERFACE GRAPHIQUE (FRONTEND)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# On sert le dossier "assets" (CSS, JS) s'il existe
+if os.path.exists("frontend/assets"):
+    app.mount("/assets", StaticFiles(directory="frontend/assets"), name="assets")
+
+# On sert la page HTML principale sur la racine "/"
+@app.get("/")
+async def serve_frontend():
+    if os.path.exists("frontend/index.html"):
+        return FileResponse("frontend/index.html")
+    return {"message": "Interface graphique non trouvée. Placez index.html dans le dossier frontend/"}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LANCEMENT
@@ -460,6 +406,6 @@ if __name__ == "__main__":
         port=int(os.environ.get("PORT", 8000)),
         workers=4,
         log_level="info",
-        server_header=False,  
+        server_header=False,
         date_header=False,
     )

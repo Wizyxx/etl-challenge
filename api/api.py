@@ -1,3 +1,4 @@
+from fastapi.middleware.cors import CORSMiddleware  # Utilisé pour le middleware CORS
 #!/usr/bin/env python3
 """
 ETL CHALLENGE - API FastAPI (v3)
@@ -18,13 +19,13 @@ import sqlite3
 import threading
 import logging
 import os
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
 DB_PATH     = os.environ.get("DB_PATH",     "duckdb/unified_data.duckdb")
 SQLITE_PATH = os.environ.get("SQLITE_PATH", "duckdb/search.db")
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # POOLS DE CONNEXIONS
@@ -83,6 +84,15 @@ app = FastAPI(
     title="API ETL Challenge — SIRENE × RNA × BAN",
     version="3.0",
     lifespan=lifespan,
+)
+
+# CONFIGURATION CORS (Pour le Frontend et Ngrok)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

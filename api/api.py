@@ -200,11 +200,12 @@ def get_siret(siret: str):
 
     return {
         "siret":  siret_,
+        "rna":    id_rna,
         "name":   name,
         "status": status,
-        "nature": nature,           # "ASSOCIATION" ou null
-        "category": categorie_entreprise,  # Ajout de la catégorie
-        "brand": enseigne,  # Ajout de l'enseigne
+        "nature": nature,
+        "categorie_entreprise": categorie_entreprise,
+        "enseigne": enseigne,
         "address": {
             "number":           addr_num or None,
             "street":           street,
